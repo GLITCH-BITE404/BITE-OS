@@ -20,6 +20,23 @@ Built on the CachyOS base — riced to the teeth, engineered to never get in you
 
 ---
 
+## ◈ Gallery
+
+<!-- Drop your screenshots in assets/screenshots/ with these names (see that
+     folder's README). Until then these links just won't render. -->
+
+<div align="center">
+
+| caelestia rice | ilyamiro rice |
+|:---:|:---:|
+| ![BITE-OS caelestia desktop](assets/screenshots/desktop-caelestia.png) | ![BITE-OS ilyamiro desktop](assets/screenshots/desktop-ilyamiro.png) |
+| **Glitch dashboard** | **`// THE SYSTEM BIT YOU`** |
+| ![BITE-OS glitch dashboard](assets/screenshots/glitch-mode.png) | ![BITE-OS splash](assets/screenshots/bite-os-splash.png) |
+
+</div>
+
+---
+
 ## ◈ What makes it BITE
 
 BITE-OS isn't a reskin. It ships things stock Arch and CachyOS simply don't have:
