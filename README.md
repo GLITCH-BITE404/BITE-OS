@@ -32,6 +32,8 @@ Built on the CachyOS base — riced to the teeth, engineered to never get in you
 | ![BITE-OS caelestia desktop](assets/screenshots/desktop-caelestia.png) | ![BITE-OS ilyamiro desktop](assets/screenshots/desktop-ilyamiro.png) |
 | **Glitch dashboard** | **`// THE SYSTEM BIT YOU`** |
 | ![BITE-OS glitch dashboard](assets/screenshots/glitch-mode.png) | ![BITE-OS splash](assets/screenshots/bite-os-splash.png) |
+| **One-key self-update (`SUPER+U`)** | **Wallpaper / rice picker** |
+| ![BITE-OS updater](assets/screenshots/updater.png) | ![BITE-OS wallpaper picker](assets/screenshots/wallpaper-picker.png) |
 
 </div>
 
