@@ -150,8 +150,11 @@ sudo pacman -Syu          # pull the latest BITE-OS alongside CachyOS/Arch updat
 The `bite-os` package stages the rice vault and tooling into `/etc/skel`, so
 every fresh install boots fully riced. Branding is pinned by `zz-bite-os-*`
 pacman hooks that re-assert on every upgrade — system updates can't wash the
-identity out. *(Repo hosting is being finalized for the v1.x line; the v1.0 ISO
-below ships the package baked in.)*
+identity out.
+
+The `[bite-os]` repo is **live**, hosted on GitHub Releases, and wired into
+`/etc/pacman.conf` automatically on install — so `SUPER+U` / `pacman -Syu`
+pulls new BITE-OS releases straight from this repository.
 
 ## ◈ Build it yourself
 
