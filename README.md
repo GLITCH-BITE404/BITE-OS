@@ -52,6 +52,44 @@ BITE-OS isn't a reskin. It ships things stock Arch and CachyOS simply don't have
 
 ---
 
+## ◈ Performance Engineering
+
+The rice is heavy on purpose — and it still idles light because the *backend* is
+tuned, not the effects stripped. Nothing here costs you a single blur or shader.
+
+**Wallpaper engine (event-driven, single-instance):**
+- Video wallpapers hardware-decode via **VAAPI** (`mpvpaper`), not the CPU.
+- An auto-pause daemon **freezes the wallpaper (`SIGSTOP`) the instant a window
+  goes fullscreen** and resumes it on exit — a fullscreen game/video pays ~0%
+  wallpaper cost.
+- A `flock` mutex + a `SIGCONT → SIGTERM → SIGKILL` teardown guarantee **exactly
+  one wallpaper process** — no matter how fast you spam the dot/wallpaper picker,
+  it never stacks "ghost" instances.
+- `wall-optimize` ships as a tool: it re-rates any wallpaper video to 24fps
+  (lossless to the eye on a loop), cutting decode/composite load **~20–50%**.
+  Originals are always backed up, never destroyed.
+
+**Compositor (Hyprland, tuned for mobile iGPU):**
+- **Direct scanout + per-window tearing** — fullscreen games/video bypass the
+  compositor entirely for lower latency and less GPU work. Only opt-in windows
+  tear; the desktop never does.
+- **Region damage tracking** (only redraw what changed), **VRR**, and blur passes
+  tuned to the sweet spot for integrated graphics.
+- Glitch/LARP mode toggles damage tracking around its shaders and **restores the
+  exact prior state** on exit — effects are GPU shaders + paced event loops, not
+  CPU busy-spinners.
+
+**System base (CachyOS):**
+- **zram** (zstd) compressed swap, **`ananicy-cpp`** process auto-prioritization,
+  and the CachyOS performance kernel. Governor stays `powersave` — it still
+  turbo-boosts under load, without the heat-throttling that *performance* invites
+  on a laptop.
+
+**Result:** a full glitch/DEDSEC rice that idles around **5–7% with a live video
+wallpaper** (lower still on a static one) and holds **144 fps**.
+
+---
+
 ## ◈ Custom Keybinds Matrix
 
 The system maps directly to these custom core inputs for elite navigation:
@@ -98,6 +136,22 @@ BITE-OS keeps itself current **and stays BITE-OS** — updates never revert it t
 The core engineered logic — dot-switch + watchdog, self-repair, the live
 settings engine, the rice vault — lives in **[`src/`](src/)**, readable and
 auditable with no build step. See [`src/README.md`](src/README.md) for the map.
+
+## ◈ Packages & updates
+
+BITE-OS is delivered as a **native pacman package** (`bite-os`) served from its
+own **`[bite-os]` repo** — so the whole system (rices, themes, dot-switch engine,
+glitch tooling, branding) updates the Arch-native way:
+
+```bash
+sudo pacman -Syu          # pull the latest BITE-OS alongside CachyOS/Arch updates
+```
+
+The `bite-os` package stages the rice vault and tooling into `/etc/skel`, so
+every fresh install boots fully riced. Branding is pinned by `zz-bite-os-*`
+pacman hooks that re-assert on every upgrade — system updates can't wash the
+identity out. *(Repo hosting is being finalized for the v1.x line; the v1.0 ISO
+below ships the package baked in.)*
 
 ## ◈ Build it yourself
 
