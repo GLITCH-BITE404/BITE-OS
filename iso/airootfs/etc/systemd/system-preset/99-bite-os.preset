@@ -1,0 +1,8 @@
+# BITE-OS service presets — enabled on install
+enable systemd-oomd.service
+enable ananicy-cpp.service
+enable irqbalance.service
+enable cups.socket
+enable avahi-daemon.service
+enable bluetooth.service
+enable thermald.service

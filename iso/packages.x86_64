@@ -22,19 +22,14 @@ brightnessctl
 btop
 btrfs-progs
 cachyos-fish-config
-cachyos-hello
 cachyos-hooks
-cachyos-kernel-manager
 cachyos-keyring
 cachyos-micro-settings
 cachyos-mirrorlist
-cachyos-packageinstaller
-cachyos-plymouth-bootanimation
 cachyos-rate-mirrors
 cachyos-settings
 cachyos-v3-mirrorlist
 cachyos-v4-mirrorlist
-cachyos-wallpapers
 cantarell-fonts
 cava
 chafa
@@ -279,3 +274,100 @@ caelestia-cli
 # --- live installer kiosk: boot straight into Calamares, no Hyprland ---
 cage
 acl
+
+# --- universal hardware support: works on any CPU/GPU/laptop/desktop ---
+# AMD CPU microcode (Intel already covered by intel-ucode above)
+amd-ucode
+
+# AMD GPU stack (drivers + Vulkan + VAAPI/VDPAU)
+vulkan-radeon
+lib32-vulkan-radeon
+
+# NVIDIA — proprietary open-kernel module (works Turing/RTX 20+ and newer),
+# plus userspace libs. For older cards users install nvidia-470xx-dkms post-install.
+nvidia-open-dkms
+nvidia-utils
+lib32-nvidia-utils
+nvidia-settings
+opencl-nvidia
+egl-wayland
+libvdpau
+libxnvctrl
+
+# Fallback Intel Xorg driver for very old iGPUs (modern iGPUs use modesetting)
+
+# Broadcom wifi (proprietary blob for the cards linux-firmware doesn't cover)
+
+# Headers so DKMS modules (nvidia-open-dkms, broadcom-wl-dkms) can build
+linux-cachyos-headers
+linux-headers
+
+# Printing + scanning (CUPS + drivers + auto-discovery)
+cups
+cups-pdf
+cups-filters
+cups-pk-helper
+ghostscript
+gutenprint
+foomatic-db
+foomatic-db-engine
+foomatic-db-ppds
+foomatic-db-nonfree
+foomatic-db-nonfree-ppds
+hplip
+sane
+sane-airscan
+system-config-printer
+avahi
+nss-mdns
+
+# Laptop battery/thermal extras
+acpi
+acpid
+thermald
+powertop
+brightnessctl
+
+# Touchpad + input
+libinput
+xf86-input-libinput
+xf86-input-wacom
+iio-sensor-proxy
+
+# Modern Bluetooth audio codecs (LDAC/AAC/aptX)
+libldac
+libfreeaptx
+
+# Multimedia codecs (h264/h265/av1/vpx/etc — DVD playback)
+gst-libav
+gst-plugins-bad
+gst-plugins-ugly
+libdvdcss
+libdvdread
+libdvdnav
+ffmpeg
+
+# Filesystem support (covers anything users might plug in)
+ntfs-3g
+exfatprogs
+f2fs-tools
+btrfs-progs
+xfsprogs
+dosfstools
+udftools
+
+# Misc firmware not in linux-firmware
+sof-tools
+alsa-ucm-conf
+mkinitcpio-firmware
+
+# --- perf additions (low memory, low overhead, real-world snappiness) ---
+# systemd-oomd is part of systemd; enabled via service preset below.
+# ananicy-cpp auto-renices background tasks so foreground apps stay snappy.
+ananicy-cpp
+cachyos-ananicy-rules
+# dbus-broker — drop-in replacement for dbus-daemon, lower IPC latency
+dbus-broker
+dbus-broker-units
+# spread hardware interrupts across cores (helps multi-core latency)
+irqbalance

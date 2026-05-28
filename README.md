@@ -162,7 +162,7 @@ The system maps directly to these custom core inputs for elite navigation:
 
 **➡ [Download BITE-OS 1.0 (dedsec)](https://archive.org/download/bite-os-1.0-x86_64_20260525/bite-os-1.0-x86_64.iso)**
 
-`SHA256`: `dee49cc6ea199444600eab441e1e6ae5de7dac9dd1a99cf028ebfd9bb46e6904`
+`SHA256`: `080f5e839f5199cc5556e07ef5c12753787f6e1f1587ffa34364edd71a48d2c2`
 
 ## ◈ Install
 
