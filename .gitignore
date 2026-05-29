@@ -21,3 +21,11 @@ pkg/**/*.tar.gz
 .build-work/
 .build-profile/
 /airootfs/
+
+# editor / rice backup cruft — never ship these in the payload or track them
+*.bak
+*.bak-*
+*.orig
+*~
+*.pre-*
+*-preopt

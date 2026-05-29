@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Update BITE-OS
+GenericName=System Updater
+Comment=Update everything (kernel, apps, rice) while staying BITE-OS — shows logs
+Exec=kitty -e bite-os-update
+Icon=bite-os
+Terminal=false
+Categories=System;Settings;
+Keywords=update;upgrade;pacman;paru;system;bite-os;
+StartupNotify=true
