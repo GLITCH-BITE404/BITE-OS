@@ -217,6 +217,21 @@ for C in /etc/calamares/modules/shellprocess.conf \
     # in this step — guard it too so nothing in the post step can ever abort.
     sed -i 's#command: "/etc/calamares/scripts/bootloader-post-setup"#command: "-/etc/calamares/scripts/bootloader-post-setup"#' "$C"
     echo "[customize_airootfs] shellprocess(post): dmcheck/shell-setup/bootloader-post-setup all made non-fatal ($C)"
+    # CRITICAL (boot-killer): our archiso base ships /etc/mkinitcpio.conf.d/archiso.conf
+    # with HOOKS=(... archiso archiso_loop_mnt archiso_pxe_* ...). unpackfs copies it
+    # to the target, and the initcpio step (sequence #13) bakes those live-medium
+    # hooks into the installed initramfs -> the disk boots straight to an emergency
+    # shell ("can't find /run/archiso/..."). We can't delete archiso.conf at build
+    # time (the LIVE ISO's own initramfs needs it) and no chroot hook runs before
+    # #13, so we fix it in THIS post step (#21, after #13): drop the drop-in, then
+    # rebuild a clean initramfs over the dirty one. grub.cfg (written at #18) points
+    # at the initramfs by path, not content, so rebuilding now is safe. Injected at
+    # the FRONT of the script list via a single-line sub (robust, unlike a multi-
+    # line append) and guarded so it's idempotent.
+    if ! grep -q 'mkinitcpio.conf.d/archiso.conf' "$C"; then
+        sed -i 's#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#    - "-rm -f /etc/mkinitcpio.conf.d/archiso.conf"\n    - "mkinitcpio -P"\n    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#' "$C"
+        echo "[customize_airootfs] shellprocess(post): drops live archiso mkinitcpio hooks + rebuilds a clean target initramfs ($C)"
+    fi
 done
 
 # Put the BITE-OS wolf on the GRUB boot screen (the offline install uses GRUB
@@ -280,6 +295,12 @@ for chk in '/usr/local/bin/remove-nvidia#shellprocess-before.conf' '/usr/local/b
         echo "[customize_airootfs] FATAL: $cfg still calls $cmd un-neutralised — offline install will abort. Re-check section 3c." >&2; exit 1
     fi
 done
+# The target initramfs MUST be rebuilt clean of archiso hooks, or the installed
+# system emergency-shells on boot. Assert the post step injection took.
+if [ -f /etc/calamares/modules/shellprocess.conf ]; then
+    grep -q 'mkinitcpio.conf.d/archiso.conf' /etc/calamares/modules/shellprocess.conf || { echo "[customize_airootfs] FATAL: shellprocess.conf did not get the archiso-initramfs cleanup injected — installed system would boot to an emergency shell. cachyos-calamares layout changed; re-check section 3c." >&2; exit 1; }
+    grep -q '"mkinitcpio -P"' /etc/calamares/modules/shellprocess.conf || { echo "[customize_airootfs] FATAL: shellprocess.conf is missing the post-install 'mkinitcpio -P' rebuild — re-check section 3c." >&2; exit 1; }
+fi
 if [ ! -s /etc/skel/.config/hypr/hyprland.conf ]; then
     echo "[customize_airootfs] FATAL: /etc/skel rice missing — installed users won't get BITE-OS" >&2
     exit 1
