@@ -154,7 +154,11 @@ for C in /etc/calamares/modules/shellprocess.conf \
     [ -f "$C" ] || continue
     sed -i 's#command: "/usr/local/bin/dmcheck"#command: "-/usr/local/bin/dmcheck"#' "$C"
     sed -i 's#command: "/etc/calamares/scripts/shell-setup ${USER}"#command: "-/etc/calamares/scripts/shell-setup ${USER}"#' "$C"
-    echo "[customize_airootfs] shellprocess(post): dmcheck made non-fatal, shell-setup made non-fatal ($C)"
+    # bootloader-post-setup is a verified no-op on our grub install (its limine
+    # and systemd-boot branches are both skipped), but it's the last un-'-' call
+    # in this step — guard it too so nothing in the post step can ever abort.
+    sed -i 's#command: "/etc/calamares/scripts/bootloader-post-setup"#command: "-/etc/calamares/scripts/bootloader-post-setup"#' "$C"
+    echo "[customize_airootfs] shellprocess(post): dmcheck/shell-setup/bootloader-post-setup all made non-fatal ($C)"
 done
 
 # Put the BITE-OS wolf on the GRUB boot screen (the offline install uses GRUB
