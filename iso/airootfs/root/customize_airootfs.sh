@@ -131,16 +131,74 @@ done
 #       bootloader-post-setup  left as-is: on our grub install both its limine and
 #                its systemd-boot branches are skipped, so it's already a no-op.
 #
-# Fix: guard try-v3's body so it can never wipe pacman.conf, and mark the
-# missing/optional helper calls with Calamares' documented leading-'-' "ignore
-# failure" prefix.
+# Fix: OVERWRITE try-v3 wholesale with a safe rewrite (a surgical sed insert can
+# half-apply in the chroot and leave it unguarded — that bit us once already), and
+# mark the missing/optional helper calls with Calamares' documented leading-'-'
+# "ignore failure" prefix. The rewrite keeps upstream CachyOS arch-detection
+# behaviour when a real /etc/pacman-more.conf exists, but is a clean `exit 0`
+# no-op when it doesn't — and it NEVER moves pacman.conf aside unless it can
+# actually replace it, so it can neither abort the install nor leave the target
+# without a pacman.conf.
 TRYV3=/etc/calamares/scripts/try-v3
-if [ -f "$TRYV3" ] && ! grep -q 'BITE-OS guard' "$TRYV3"; then
-    sed -i '1a\
-# BITE-OS guard: no CachyOS split config on our base, and the mv below would\
-# wipe the target pacman.conf. Our squashfs already has the right repos -> no-op.\
-[ -f /etc/pacman-more.conf ] || { echo "try-v3: no /etc/pacman-more.conf, skipping (BITE-OS repos already set)"; exit 0; }' "$TRYV3"
-    echo "[customize_airootfs] try-v3 guarded (can no longer wipe the target pacman.conf)"
+if [ -f "$TRYV3" ]; then
+    cat > "$TRYV3" <<'TRYV3_EOF'
+#!/bin/bash
+# BITE-OS safe rewrite of cachyos-calamares' try-v3.
+# Upstream unconditionally `mv`d /etc/pacman.conf to .bak and swapped in
+# /etc/pacman-more.conf to enable CPU-arch (v3/v4/znver) repos. On BITE-OS's
+# archiso base that split config does not exist, so the original failed its
+# seds, WIPED the target's pacman.conf with the mv, then died exit 1 — aborting
+# the install. This version is a strict no-op unless a real, non-empty
+# /etc/pacman-more.conf is present, and never moves pacman.conf away unless it
+# can be replaced.
+set -u
+
+pacman_conf="/etc/pacman.conf"
+pacman_conf_cachyos="/etc/pacman-more.conf"
+pacman_conf_path_backup="${pacman_conf}.bak"
+
+# Safety guard: without CachyOS's split config there is nothing to swap, and
+# BITE-OS already ships a correct pacman.conf. Exit cleanly so the step passes.
+if [ ! -s "$pacman_conf_cachyos" ]; then
+    echo "try-v3: no $pacman_conf_cachyos present — keeping existing pacman.conf (BITE-OS repos already set)."
+    exit 0
+fi
+
+# A real pacman-more.conf exists -> preserve upstream CachyOS arch behaviour.
+check_v3="$(/lib/ld-linux-x86-64.so.2 --help 2>/dev/null | grep 'x86-64-v3 (' | awk '{print $1}')"
+check_v4="$(/lib/ld-linux-x86-64.so.2 --help 2>/dev/null | grep 'x86-64-v4 (' | awk '{print $1}')"
+check_znver4_znver5="$(gcc -march=native -Q --help=target 2>&1 | head -n 37 | grep -E '(znver4|znver5)')"
+
+if [ -n "$check_znver4_znver5" ]; then
+    echo "znver4 or znver5 is supported"
+    sed -i 's/#<disabled_znver4>//g' "$pacman_conf_cachyos"
+    sed -i '/disabled_v[34]/d' "$pacman_conf_cachyos"
+elif [ "$check_v4" = "x86-64-v4" ]; then
+    echo "x86-64-v4 is supported"
+    sed -i 's/#<disabled_v4>//g' "$pacman_conf_cachyos"
+    sed -i '/disabled_v3/d' "$pacman_conf_cachyos"
+    sed -i '/disabled_znver4/d' "$pacman_conf_cachyos"
+elif [ "$check_v3" = "x86-64-v3" ]; then
+    echo "x86-64-v3 is supported"
+    sed -i 's/#<disabled_v3>//g' "$pacman_conf_cachyos"
+    sed -i '/disabled_znver4/d' "$pacman_conf_cachyos"
+    sed -i '/disabled_v4/d' "$pacman_conf_cachyos"
+else
+    echo "x86-64-v3/v4 not detected — using baseline CachyOS repos"
+fi
+
+# Only swap if the source is still present and non-empty after the seds, so we
+# can never strand the target without a pacman.conf.
+if [ -s "$pacman_conf_cachyos" ]; then
+    echo "backup old config"
+    mv -f "$pacman_conf" "$pacman_conf_path_backup"
+    echo "CachyOS repo config applied"
+    mv -f "$pacman_conf_cachyos" "$pacman_conf"
+fi
+exit 0
+TRYV3_EOF
+    chmod +x "$TRYV3"
+    echo "[customize_airootfs] try-v3 replaced with BITE-OS safe rewrite (can neither wipe pacman.conf nor abort on missing /etc/pacman-more.conf)"
 fi
 for C in /etc/calamares/modules/shellprocess-before.conf \
          /usr/share/calamares/modules/shellprocess-before.conf; do
@@ -207,9 +265,13 @@ done
 command -v calamares >/dev/null || { echo "[customize_airootfs] FATAL: calamares not installed" >&2; exit 1; }
 command -v grub-install >/dev/null || { echo "[customize_airootfs] FATAL: grub not installed — Calamares bootloader step (efiBootLoader: grub) would fail" >&2; exit 1; }
 [ -f /etc/mkinitcpio.d/linux.preset ] && [ -f /etc/mkinitcpio.d/linux-cachyos.preset ] || { echo "[customize_airootfs] FATAL: expected both linux + linux-cachyos presets (unpackfs copies both kernels)" >&2; exit 1; }
-# If a future cachyos-calamares still ships try-v3, it MUST be guarded (see 3c) —
-# an unguarded one silently wipes the installed system's pacman.conf.
-[ ! -f /etc/calamares/scripts/try-v3 ] || grep -q 'BITE-OS guard' /etc/calamares/scripts/try-v3 || { echo "[customize_airootfs] FATAL: try-v3 present but NOT guarded — it would wipe the target pacman.conf. cachyos-calamares layout changed; re-check section 3c." >&2; exit 1; }
+# If cachyos-calamares ships try-v3, it MUST be our safe rewrite (see 3c) — the
+# upstream one silently wipes the installed system's pacman.conf. Assert both
+# that our marker is present AND that no bare `mv $pacman_conf ...` survived.
+if [ -f /etc/calamares/scripts/try-v3 ]; then
+    grep -q 'BITE-OS safe rewrite' /etc/calamares/scripts/try-v3 || { echo "[customize_airootfs] FATAL: try-v3 present but NOT our safe rewrite — it would wipe the target pacman.conf. cachyos-calamares layout changed; re-check section 3c." >&2; exit 1; }
+    grep -Eq '^[[:space:]]*if \[ ! -s "\$pacman_conf_cachyos" \]' /etc/calamares/scripts/try-v3 || { echo "[customize_airootfs] FATAL: try-v3 is missing its missing-file guard — re-check section 3c." >&2; exit 1; }
+fi
 # The missing CachyOS-only helpers must be neutralised, or the offline install aborts mid-way.
 for chk in '/usr/local/bin/remove-nvidia#shellprocess-before.conf' '/usr/local/bin/removeun#shellprocess-before.conf' '/usr/local/bin/dmcheck#shellprocess.conf'; do
     cmd="${chk%%#*}"; cfg="/etc/calamares/modules/${chk##*#}"
