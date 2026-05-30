@@ -106,6 +106,57 @@ for P in /etc/calamares/modules/partition.conf /usr/share/calamares/modules/part
     echo "[customize_airootfs] partition: ESP -> /boot/efi @ 512M ($P)"
 done
 
+# 3c. cachyos-calamares' two shellprocess steps (shellprocess@before and the
+#     post-install shellprocess, both in the OFFLINE sequence) call helper
+#     scripts that only exist on CachyOS's OWN live-ISO overlay, or that assume
+#     its limine/pacman-more layout. On BITE-OS's archiso `releng` base each of
+#     these ABORTS the offline install — a shellprocess command that fails and
+#     is NOT prefixed with '-' kills Calamares. The offenders:
+#
+#       try-v3   swaps /etc/pacman.conf for CachyOS's split /etc/pacman-more.conf
+#                to pick v3/v4 repos. That file doesn't exist here, so its seds
+#                fail AND its unconditional `mv /etc/pacman.conf .bak` WIPES the
+#                target's pacman.conf before it dies with exit 1 — both aborting
+#                the install and, if it ever ran to completion, leaving the
+#                installed system with no pacman.conf at all. Our squashfs already
+#                ships a correct pacman.conf, so this swap is pure CachyOS baggage.
+#       remove-nvidia / removeun / dmcheck
+#                ship only on the CachyOS ISO, not in cachyos-calamares and not in
+#                our airootfs overlay -> "command not found" aborts the step. None
+#                are needed: keeping all GPU drivers is what makes BITE-OS "run on
+#                any GPU", the `displaymanager` module already enables sddm, and
+#                our own bite-os-firstboot-cleanup handles live-only cleanup.
+#       shell-setup  chsh's the new user to fish — harmless, but made non-fatal so
+#                a chsh/etc-shells hiccup can't abort an otherwise-good install.
+#       bootloader-post-setup  left as-is: on our grub install both its limine and
+#                its systemd-boot branches are skipped, so it's already a no-op.
+#
+# Fix: guard try-v3's body so it can never wipe pacman.conf, and mark the
+# missing/optional helper calls with Calamares' documented leading-'-' "ignore
+# failure" prefix.
+TRYV3=/etc/calamares/scripts/try-v3
+if [ -f "$TRYV3" ] && ! grep -q 'BITE-OS guard' "$TRYV3"; then
+    sed -i '1a\
+# BITE-OS guard: no CachyOS split config on our base, and the mv below would\
+# wipe the target pacman.conf. Our squashfs already has the right repos -> no-op.\
+[ -f /etc/pacman-more.conf ] || { echo "try-v3: no /etc/pacman-more.conf, skipping (BITE-OS repos already set)"; exit 0; }' "$TRYV3"
+    echo "[customize_airootfs] try-v3 guarded (can no longer wipe the target pacman.conf)"
+fi
+for C in /etc/calamares/modules/shellprocess-before.conf \
+         /usr/share/calamares/modules/shellprocess-before.conf; do
+    [ -f "$C" ] || continue
+    sed -i 's#command: "/usr/local/bin/remove-nvidia"#command: "-/usr/local/bin/remove-nvidia"#' "$C"
+    sed -i 's#command: "/usr/local/bin/removeun"#command: "-/usr/local/bin/removeun"#' "$C"
+    echo "[customize_airootfs] shellprocess@before: missing CachyOS helpers (remove-nvidia/removeun) made non-fatal ($C)"
+done
+for C in /etc/calamares/modules/shellprocess.conf \
+         /usr/share/calamares/modules/shellprocess.conf; do
+    [ -f "$C" ] || continue
+    sed -i 's#command: "/usr/local/bin/dmcheck"#command: "-/usr/local/bin/dmcheck"#' "$C"
+    sed -i 's#command: "/etc/calamares/scripts/shell-setup ${USER}"#command: "-/etc/calamares/scripts/shell-setup ${USER}"#' "$C"
+    echo "[customize_airootfs] shellprocess(post): dmcheck made non-fatal, shell-setup made non-fatal ($C)"
+done
+
 # Put the BITE-OS wolf on the GRUB boot screen (the offline install uses GRUB
 # with the cachyos theme; swap its background image for ours).
 GRUB_THEME=/usr/share/grub/themes/cachyos
@@ -152,6 +203,17 @@ done
 command -v calamares >/dev/null || { echo "[customize_airootfs] FATAL: calamares not installed" >&2; exit 1; }
 command -v grub-install >/dev/null || { echo "[customize_airootfs] FATAL: grub not installed — Calamares bootloader step (efiBootLoader: grub) would fail" >&2; exit 1; }
 [ -f /etc/mkinitcpio.d/linux.preset ] && [ -f /etc/mkinitcpio.d/linux-cachyos.preset ] || { echo "[customize_airootfs] FATAL: expected both linux + linux-cachyos presets (unpackfs copies both kernels)" >&2; exit 1; }
+# If a future cachyos-calamares still ships try-v3, it MUST be guarded (see 3c) —
+# an unguarded one silently wipes the installed system's pacman.conf.
+[ ! -f /etc/calamares/scripts/try-v3 ] || grep -q 'BITE-OS guard' /etc/calamares/scripts/try-v3 || { echo "[customize_airootfs] FATAL: try-v3 present but NOT guarded — it would wipe the target pacman.conf. cachyos-calamares layout changed; re-check section 3c." >&2; exit 1; }
+# The missing CachyOS-only helpers must be neutralised, or the offline install aborts mid-way.
+for chk in '/usr/local/bin/remove-nvidia#shellprocess-before.conf' '/usr/local/bin/removeun#shellprocess-before.conf' '/usr/local/bin/dmcheck#shellprocess.conf'; do
+    cmd="${chk%%#*}"; cfg="/etc/calamares/modules/${chk##*#}"
+    [ -f "$cfg" ] || continue
+    if grep -q "command: \"$cmd\"" "$cfg"; then
+        echo "[customize_airootfs] FATAL: $cfg still calls $cmd un-neutralised — offline install will abort. Re-check section 3c." >&2; exit 1
+    fi
+done
 if [ ! -s /etc/skel/.config/hypr/hyprland.conf ]; then
     echo "[customize_airootfs] FATAL: /etc/skel rice missing — installed users won't get BITE-OS" >&2
     exit 1
