@@ -270,6 +270,39 @@ else
     echo "[customize_airootfs] no repo signing key — skipping [bite-os] update repo (CachyOS-only updates)"
 fi
 
+# 3d. Performance stack — sched-ext scheduler (scx_lavd) + the spaceship max-perf
+#     power helper. Installed SYSTEM-WIDE so every BITE-OS install gets them; the
+#     rice scripts that DRIVE this (ppd-spaceship-watch.sh + the fuzzel chooser)
+#     ship per-user in /etc/skel via the bite-os package.
+install -Dm755 /dev/stdin /usr/local/bin/bite-spaceship-power <<'SPACESHIP_EOF'
+#!/usr/bin/env bash
+# BITE-OS spaceship power helper (ROOT, via NOPASSWD sudo). ondemand|pinned|off
+set -u
+PSTATE=/sys/devices/system/cpu/intel_pstate
+set_node() { for f in /sys/devices/system/cpu/cpu*/cpufreq/"$1"; do [ -w "$f" ] && echo "$2" > "$f" 2>/dev/null; done; return 0; }
+case "${1:-}" in
+  ondemand) set_node scaling_governor powersave; set_node energy_performance_preference performance; [ -w "$PSTATE/no_turbo" ] && echo 0 > "$PSTATE/no_turbo"; [ -w "$PSTATE/min_perf_pct" ] && echo 10 > "$PSTATE/min_perf_pct" ;;
+  pinned)   set_node scaling_governor performance; set_node energy_performance_preference performance; [ -w "$PSTATE/no_turbo" ] && echo 0 > "$PSTATE/no_turbo"; [ -w "$PSTATE/min_perf_pct" ] && echo 100 > "$PSTATE/min_perf_pct" ;;
+  off)      set_node scaling_governor powersave; [ -w "$PSTATE/min_perf_pct" ] && echo 10 > "$PSTATE/min_perf_pct" ;;
+  *) echo "usage: ${0##*/} ondemand|pinned|off" >&2; exit 2 ;;
+esac
+SPACESHIP_EOF
+
+install -d -m 0750 /etc/sudoers.d
+cat > /etc/sudoers.d/bite-spaceship <<'SUDO_EOF'
+# group-based so it works for any installed username (not just the builder's)
+%wheel ALL=(root) NOPASSWD: /usr/local/bin/bite-spaceship-power ondemand, /usr/local/bin/bite-spaceship-power pinned, /usr/local/bin/bite-spaceship-power off
+SUDO_EOF
+chmod 440 /etc/sudoers.d/bite-spaceship
+
+# scx_lavd as the default sched-ext scheduler (great for busy interactive desktops)
+cat > /etc/scx_loader.toml <<'SCX_EOF'
+default_sched = "scx_lavd"
+default_mode = "Auto"
+SCX_EOF
+systemctl enable scx_loader.service 2>/dev/null || true
+echo "[customize_airootfs] perf stack wired — bite-spaceship-power + sudoers + scx_lavd"
+
 # 4. Sanity checks — fail the build loudly if a critical piece is missing.
 for f in /usr/bin/cage /usr/local/bin/bite-os-installer-session \
          /usr/local/bin/bite-os-kiosk \

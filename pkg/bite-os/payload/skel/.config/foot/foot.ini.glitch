@@ -15,10 +15,10 @@ indicator-position=relative
 [cursor]
 style=beam
 beam-thickness=1.5
-color=000000 ffcc00
 
-[colors]
+[colors-dark]
 alpha=0.92
+cursor=000000 ffcc00
 background=000000
 foreground=ffcc00
 regular0=000000

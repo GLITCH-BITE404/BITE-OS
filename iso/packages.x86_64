@@ -370,3 +370,8 @@ dbus-broker
 dbus-broker-units
 # spread hardware interrupts across cores (helps multi-core latency)
 irqbalance
+
+# BITE-OS perf stack — sched-ext scheduler + spaceship chooser menu
+scx-scheds
+scx-manager
+fuzzel

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  ◈ BITE-OS  ·  © 2026 GLITCH-BITE404  ·  // THE SYSTEM BIT YOU
+#  https://github.com/GLITCH-BITE404/BITE-OS  ·  GPLv3 — keep this notice
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BITE-OS spaceship power helper — runs as ROOT via a narrow NOPASSWD sudo rule
+# (/etc/sudoers.d/bite-spaceship). Driven by the spaceship chooser / PPD watcher.
+#
+#   Usage: bite-spaceship-power ondemand|pinned|off
+#
+#   ondemand : max performance ON DEMAND. EPP=performance ramps to full speed
+#              instantly under load, but clocks idle DOWN when there's nothing
+#              to do -> low idle usage + heat. Wastes battery only while pushing.
+#   pinned   : cores LOCKED at max clock 24/7 (governor performance + 100% floor).
+#              Absolute max, true battery waster, runs hot even at idle.
+#   off      : back to normal — governor powersave, clock floor 10%.
+#
+# Does NOT set platform_profile / the PPD-owned EPP baseline beyond what's needed;
+# power-profiles-daemon owns the profile, this only adds the governor + clock floor.
+set -u
+
+PSTATE=/sys/devices/system/cpu/intel_pstate
+
+set_node() {  # $1 = cpufreq node name, $2 = value (best-effort per cpu)
+    for f in /sys/devices/system/cpu/cpu*/cpufreq/"$1"; do
+        [ -w "$f" ] && echo "$2" > "$f" 2>/dev/null
+    done
+    return 0
+}
+
+case "${1:-}" in
+  ondemand)
+    set_node scaling_governor powersave              # let HWP scale DOWN at idle
+    set_node energy_performance_preference performance   # but ramp HARD under load
+    [ -w "$PSTATE/no_turbo" ]     && echo 0  > "$PSTATE/no_turbo"
+    [ -w "$PSTATE/min_perf_pct" ] && echo 10 > "$PSTATE/min_perf_pct"   # low floor = cheap idle
+    ;;
+  pinned)
+    set_node scaling_governor performance            # pin HWP min = max
+    set_node energy_performance_preference performance
+    [ -w "$PSTATE/no_turbo" ]     && echo 0   > "$PSTATE/no_turbo"
+    [ -w "$PSTATE/min_perf_pct" ] && echo 100 > "$PSTATE/min_perf_pct" # locked at max
+    ;;
+  off)
+    set_node scaling_governor powersave
+    [ -w "$PSTATE/min_perf_pct" ] && echo 10 > "$PSTATE/min_perf_pct"
+    ;;
+  *)
+    echo "usage: ${0##*/} ondemand|pinned|off" >&2
+    exit 2
+    ;;
+esac
