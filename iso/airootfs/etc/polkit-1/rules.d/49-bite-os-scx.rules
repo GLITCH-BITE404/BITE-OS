@@ -1,0 +1,14 @@
+// ━━━ BITE-OS ━━━  // THE SYSTEM BIT YOU
+// Let the active local user start/stop/switch sched-ext (scx_loader) schedulers
+// WITHOUT a password. Without this, scx_loader's polkit action
+// `org.scx.loader.manage-schedulers` is auth_admin, so every `scxctl switch`
+// (the spaceship rocket toggle + the login watcher) pops an authentication
+// dialog — including right after SDDM login. Scheduler choice is a desktop
+// performance preference, not a security boundary, so allow it for the seated
+// local session. (Remote/inactive sessions still get the default prompt.)
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.scx.loader.manage-schedulers" &&
+        subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});
