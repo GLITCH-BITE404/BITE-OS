@@ -308,13 +308,31 @@ fi
 install -Dm755 /dev/stdin /usr/local/bin/bite-spaceship-power <<'SPACESHIP_EOF'
 #!/usr/bin/env bash
 # BITE-OS spaceship power helper (ROOT, via NOPASSWD sudo). ondemand|pinned|off
+# Portable across intel_pstate + amd_pstate/generic cpufreq; every write guarded.
 set -u
 PSTATE=/sys/devices/system/cpu/intel_pstate
 set_node() { for f in /sys/devices/system/cpu/cpu*/cpufreq/"$1"; do [ -w "$f" ] && echo "$2" > "$f" 2>/dev/null; done; return 0; }
+set_turbo() {
+    if [ -w "$PSTATE/no_turbo" ]; then [ "$1" = 1 ] && echo 0 > "$PSTATE/no_turbo" 2>/dev/null || echo 1 > "$PSTATE/no_turbo" 2>/dev/null; fi
+    [ -w /sys/devices/system/cpu/cpufreq/boost ] && echo "$1" > /sys/devices/system/cpu/cpufreq/boost 2>/dev/null
+    return 0
+}
+set_floor() {
+    if [ -w "$PSTATE/min_perf_pct" ]; then
+        [ "$1" = max ] && echo 100 > "$PSTATE/min_perf_pct" 2>/dev/null || echo 10 > "$PSTATE/min_perf_pct" 2>/dev/null
+    else
+        for d in /sys/devices/system/cpu/cpu*/cpufreq; do
+            [ -w "$d/scaling_min_freq" ] || continue
+            if [ "$1" = max ]; then [ -r "$d/cpuinfo_max_freq" ] && cat "$d/cpuinfo_max_freq" > "$d/scaling_min_freq" 2>/dev/null
+            else [ -r "$d/cpuinfo_min_freq" ] && cat "$d/cpuinfo_min_freq" > "$d/scaling_min_freq" 2>/dev/null; fi
+        done
+    fi
+    return 0
+}
 case "${1:-}" in
-  ondemand) set_node scaling_governor powersave; set_node energy_performance_preference performance; [ -w "$PSTATE/no_turbo" ] && echo 0 > "$PSTATE/no_turbo"; [ -w "$PSTATE/min_perf_pct" ] && echo 10 > "$PSTATE/min_perf_pct" ;;
-  pinned)   set_node scaling_governor performance; set_node energy_performance_preference performance; [ -w "$PSTATE/no_turbo" ] && echo 0 > "$PSTATE/no_turbo"; [ -w "$PSTATE/min_perf_pct" ] && echo 100 > "$PSTATE/min_perf_pct" ;;
-  off)      set_node scaling_governor powersave; [ -w "$PSTATE/min_perf_pct" ] && echo 10 > "$PSTATE/min_perf_pct" ;;
+  ondemand) set_node scaling_governor powersave;   set_node energy_performance_preference performance; set_turbo 1; set_floor low ;;
+  pinned)   set_node scaling_governor performance; set_node energy_performance_preference performance; set_turbo 1; set_floor max ;;
+  off)      set_node scaling_governor powersave;   set_floor low ;;
   *) echo "usage: ${0##*/} ondemand|pinned|off" >&2; exit 2 ;;
 esac
 SPACESHIP_EOF

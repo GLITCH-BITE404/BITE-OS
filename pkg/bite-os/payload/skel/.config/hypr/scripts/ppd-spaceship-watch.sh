@@ -3,48 +3,62 @@
 #  ◈ BITE-OS  ·  © 2026 GLITCH-BITE404  ·  // THE SYSTEM BIT YOU
 #  https://github.com/GLITCH-BITE404/BITE-OS  ·  GPLv3 — keep this notice
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# BITE-OS spaceship watcher — watches the power-profiles-daemon profile (the bar's
-# lightning / scales / ROCKET buttons). When you hit the rocket (performance), it
-# pops the spaceship chooser (fuzzel) asking which max mode. Balanced / power-saver
-# wind the CPU back down. Lives independently of caelestia's QML (which gets
-# restored on shell restart), so it survives. Launch via hypr exec-once.
+# BITE-OS spaceship watcher — watches power-profiles-daemon (the bar's lightning /
+# scales / ROCKET buttons). Rocket (performance) -> pops the fuzzel chooser
+# (on-demand vs pinned); balanced / power-saver wind the CPU back down. Runs
+# standalone of caelestia's QML (which gets restored on shell restart), launched
+# via hypr exec-once.
 set -u
 
-# single instance — kill any older watcher so we don't double-poll / double-popup
-for pid in $(pgrep -f "ppd-spaceship-watch.sh" 2>/dev/null); do
-    [ "$pid" != "$$" ] && kill "$pid" 2>/dev/null
-done
+CACHE_DIR="$HOME/.cache/bite-os"
+mkdir -p "$CACHE_DIR" 2>/dev/null
+
+# Single instance — flock is race-proof (pgrep matching let duplicates through,
+# which caused double fuzzel popups). Hold an exclusive lock for our lifetime;
+# if another watcher already holds it, quietly exit.
+exec 9>"$CACHE_DIR/spaceship-watch.lock" 2>/dev/null || exec 9>/tmp/bite-spaceship-watch.lock
+flock -n 9 || exit 0
 
 HELPER="/usr/local/bin/bite-spaceship-power"
 CHOOSER="$HOME/.config/hypr/scripts/spaceship-choose.sh"
 
-apply() {  # $1 = profile, $2 = interactive? (1 pops the chooser, 0 = silent default)
+apply() {  # $1 = profile, $2 = interactive? (1 = pop chooser, 0 = silent default)
     case "$1" in
         performance)
-            if [ "${2:-0}" = 1 ]; then
-                "$CHOOSER"                                   # ask: on-demand vs pinned
+            if [ "${2:-0}" = 1 ] && [ -x "$CHOOSER" ]; then
+                "$CHOOSER"
             else
-                sudo -n "$HELPER" ondemand                   # login default: silent on-demand
-                scxctl switch -s scx_lavd -m gaming 2>/dev/null
+                sudo -n "$HELPER" ondemand 2>/dev/null || true
+                scxctl switch -s scx_lavd -m gaming 2>/dev/null || true
             fi
             ;;
-        *)  # balanced / power-saver
-            sudo -n "$HELPER" off
-            scxctl switch -s scx_lavd -m auto 2>/dev/null
+        ?*)  # any non-empty, non-performance profile (balanced / power-saver)
+            sudo -n "$HELPER" off 2>/dev/null || true
+            scxctl switch -s scx_lavd -m auto 2>/dev/null || true
             ;;
+        *) : ;;  # empty = PPD not ready yet -> do nothing
     esac
 }
 
-# apply current state once, silently (no popup on login)
-last="$(powerprofilesctl get 2>/dev/null)"
+# Wait up to ~30s for power-profiles-daemon to answer, then apply the current
+# state SILENTLY (mode 0). This prevents the chooser from popping at every login
+# just because PPD wasn't ready the instant the watcher started.
+last=""
+for _ in $(seq 1 30); do
+    last="$(powerprofilesctl get 2>/dev/null)"
+    [ -n "$last" ] && break
+    sleep 1
+done
 apply "$last" 0
 
-# poll for user-initiated changes
+# Poll for user-initiated profile changes. Only treat a change as interactive
+# (pop the chooser) when the PREVIOUS value was real — never on the empty->value
+# transition at startup.
 while true; do
     cur="$(powerprofilesctl get 2>/dev/null)"
-    if [ -n "$cur" ] && [ "$cur" != "$last" ]; then
+    if [ -n "$cur" ] && [ -n "$last" ] && [ "$cur" != "$last" ]; then
         apply "$cur" 1
-        last="$cur"
     fi
+    [ -n "$cur" ] && last="$cur"
     sleep 1
 done

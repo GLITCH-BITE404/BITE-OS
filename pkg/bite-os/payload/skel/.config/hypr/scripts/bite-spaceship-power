@@ -4,46 +4,71 @@
 #  https://github.com/GLITCH-BITE404/BITE-OS  ·  GPLv3 — keep this notice
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # BITE-OS spaceship power helper — runs as ROOT via a narrow NOPASSWD sudo rule
-# (/etc/sudoers.d/bite-spaceship). Driven by the spaceship chooser / PPD watcher.
+# (/etc/sudoers.d/bite-spaceship). Driven by the bar's rocket (the spaceship
+# chooser / PPD watcher).  Usage: bite-spaceship-power ondemand|pinned|off
 #
-#   Usage: bite-spaceship-power ondemand|pinned|off
+#   ondemand : EPP=performance ramps to full speed instantly under load, clocks
+#              idle DOWN when idle -> max-on-demand, low idle usage.
+#   pinned   : governor=performance + clock floor pinned to max -> locked max,
+#              true battery waster (runs hot even idle).
+#   off      : back to normal — governor powersave, low clock floor.
 #
-#   ondemand : max performance ON DEMAND. EPP=performance ramps to full speed
-#              instantly under load, but clocks idle DOWN when there's nothing
-#              to do -> low idle usage + heat. Wastes battery only while pushing.
-#   pinned   : cores LOCKED at max clock 24/7 (governor performance + 100% floor).
-#              Absolute max, true battery waster, runs hot even at idle.
-#   off      : back to normal — governor powersave, clock floor 10%.
-#
-# Does NOT set platform_profile / the PPD-owned EPP baseline beyond what's needed;
-# power-profiles-daemon owns the profile, this only adds the governor + clock floor.
+# Portable across intel_pstate AND amd_pstate/generic cpufreq: every write is
+# guarded ([ -w ]), so knobs that don't exist on a given CPU are simply skipped —
+# no errors, no half-applied state. EPP baseline for balanced/saver is left to
+# power-profiles-daemon (it owns the profile); this only adds governor + floor +
+# turbo, which PPD does not touch in active mode.
 set -u
 
 PSTATE=/sys/devices/system/cpu/intel_pstate
 
-set_node() {  # $1 = cpufreq node name, $2 = value (best-effort per cpu)
+set_node() {  # $1 = cpufreq node name, $2 = value (per-cpu, best-effort)
     for f in /sys/devices/system/cpu/cpu*/cpufreq/"$1"; do
         [ -w "$f" ] && echo "$2" > "$f" 2>/dev/null
     done
     return 0
 }
 
+set_turbo() {  # $1 = 1 enable / 0 disable  (intel_pstate no_turbo is inverted)
+    if [ -w "$PSTATE/no_turbo" ]; then
+        [ "$1" = 1 ] && echo 0 > "$PSTATE/no_turbo" 2>/dev/null || echo 1 > "$PSTATE/no_turbo" 2>/dev/null
+    fi
+    [ -w /sys/devices/system/cpu/cpufreq/boost ] && echo "$1" > /sys/devices/system/cpu/cpufreq/boost 2>/dev/null
+    return 0
+}
+
+set_floor() {  # $1 = max (pin clocks high) | low (let idle scale down)
+    if [ -w "$PSTATE/min_perf_pct" ]; then          # intel_pstate
+        [ "$1" = max ] && echo 100 > "$PSTATE/min_perf_pct" 2>/dev/null || echo 10 > "$PSTATE/min_perf_pct" 2>/dev/null
+    else                                             # amd_pstate / generic cpufreq
+        for d in /sys/devices/system/cpu/cpu*/cpufreq; do
+            [ -w "$d/scaling_min_freq" ] || continue
+            if [ "$1" = max ]; then
+                [ -r "$d/cpuinfo_max_freq" ] && cat "$d/cpuinfo_max_freq" > "$d/scaling_min_freq" 2>/dev/null
+            else
+                [ -r "$d/cpuinfo_min_freq" ] && cat "$d/cpuinfo_min_freq" > "$d/scaling_min_freq" 2>/dev/null
+            fi
+        done
+    fi
+    return 0
+}
+
 case "${1:-}" in
   ondemand)
-    set_node scaling_governor powersave              # let HWP scale DOWN at idle
-    set_node energy_performance_preference performance   # but ramp HARD under load
-    [ -w "$PSTATE/no_turbo" ]     && echo 0  > "$PSTATE/no_turbo"
-    [ -w "$PSTATE/min_perf_pct" ] && echo 10 > "$PSTATE/min_perf_pct"   # low floor = cheap idle
+    set_node scaling_governor powersave
+    set_node energy_performance_preference performance
+    set_turbo 1
+    set_floor low
     ;;
   pinned)
-    set_node scaling_governor performance            # pin HWP min = max
+    set_node scaling_governor performance
     set_node energy_performance_preference performance
-    [ -w "$PSTATE/no_turbo" ]     && echo 0   > "$PSTATE/no_turbo"
-    [ -w "$PSTATE/min_perf_pct" ] && echo 100 > "$PSTATE/min_perf_pct" # locked at max
+    set_turbo 1
+    set_floor max
     ;;
   off)
     set_node scaling_governor powersave
-    [ -w "$PSTATE/min_perf_pct" ] && echo 10 > "$PSTATE/min_perf_pct"
+    set_floor low
     ;;
   *)
     echo "usage: ${0##*/} ondemand|pinned|off" >&2
