@@ -234,6 +234,37 @@ for C in /etc/calamares/modules/shellprocess.conf \
     fi
 done
 
+# 3e. Bootloader hardening (THE boot-or-not fix). The Calamares `bootloader`
+#     module installs grub with a NAMED EFI entry (efibootmgr/NVRAM). VirtualBox
+#     and QEMU EFI firmware do NOT persist NVRAM boot entries across reboots, so
+#     the named entry vanishes and the freshly-installed disk appears unbootable
+#     ("no bootable medium" / drops to the live medium). Fix: ALSO install grub to
+#     the removable fallback path \EFI\BOOT\BOOTX64.EFI, which all firmware tries
+#     unconditionally — and on BIOS, to the disk MBR. Appended to bootloader-post-
+#     setup, which already runs in the target chroot via the post shellprocess
+#     step (after the bootloader module + initramfs rebuild). No-op-safe on real
+#     hardware; decisive in a VM.
+BPS=/etc/calamares/scripts/bootloader-post-setup
+if [ -f "$BPS" ] && ! grep -q 'BITE-OS: removable grub fallback' "$BPS"; then
+    cat >> "$BPS" <<'BPS_EOF'
+
+# --- BITE-OS: removable grub fallback (VirtualBox/QEMU EFI drop NVRAM entries) ---
+if command -v grub-install >/dev/null 2>&1 && ! pacman -Qq limine 2>/dev/null; then
+    if [ -d /sys/firmware/efi ]; then
+        esp="$(findmnt -no TARGET /boot/efi 2>/dev/null)"; [ -n "$esp" ] || esp=/boot/efi
+        grub-install --target=x86_64-efi --efi-directory="$esp" --bootloader-id=BITE-OS --recheck || true
+        grub-install --target=x86_64-efi --efi-directory="$esp" --bootloader-id=BITE-OS --removable --recheck || true
+    else
+        rootdev="$(findmnt -no SOURCE / 2>/dev/null)"
+        disk="/dev/$(lsblk -no PKNAME "$rootdev" 2>/dev/null | head -1)"
+        [ -b "$disk" ] && grub-install --target=i386-pc --recheck "$disk" || true
+    fi
+    grub-mkconfig -o /boot/grub/grub.cfg || true
+fi
+BPS_EOF
+    echo "[customize_airootfs] bootloader-post-setup: added removable grub fallback (EFI fallback path + BIOS MBR)"
+fi
+
 # Put the BITE-OS wolf on the GRUB boot screen (the offline install uses GRUB
 # with the cachyos theme; swap its background image for ours).
 GRUB_THEME=/usr/share/grub/themes/cachyos
