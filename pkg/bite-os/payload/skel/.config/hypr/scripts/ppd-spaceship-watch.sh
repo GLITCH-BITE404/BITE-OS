@@ -22,19 +22,24 @@ flock -n 9 || exit 0
 HELPER="/usr/local/bin/bite-spaceship-power"
 CHOOSER="$HOME/.config/hypr/scripts/spaceship-choose.sh"
 
-apply() {  # $1 = profile, $2 = interactive? (1 = pop chooser, 0 = silent default)
+apply() {  # $1 = profile, $2 = interactive? (1 = user-initiated press, 0 = silent startup)
     case "$1" in
         performance)
             if [ "${2:-0}" = 1 ] && [ -x "$CHOOSER" ]; then
-                "$CHOOSER"
+                "$CHOOSER"   # chooser handles the scx gaming switch itself
             else
                 sudo -n "$HELPER" ondemand 2>/dev/null || true
-                scxctl switch -s scx_lavd -m gaming 2>/dev/null || true
             fi
             ;;
         ?*)  # any non-empty, non-performance profile (balanced / power-saver)
             sudo -n "$HELPER" off 2>/dev/null || true
-            scxctl switch -s scx_lavd -m auto 2>/dev/null || true
+            # Only retune the scheduler on a REAL user-initiated change. scx_loader
+            # already boots in Auto, so switching to Auto on the silent startup pass
+            # is redundant and — without the polkit rule — pops an auth dialog right
+            # after SDDM login. That redundant switch was the annoying login prompt.
+            if [ "${2:-0}" = 1 ]; then
+                scxctl switch -s scx_lavd -m auto 2>/dev/null || true
+            fi
             ;;
         *) : ;;  # empty = PPD not ready yet -> do nothing
     esac
