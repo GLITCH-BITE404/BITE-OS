@@ -14,7 +14,12 @@ StyledClippingRect {
     required property ShellScreen screen
     required property bool fullscreen
 
-    readonly property bool onSpecial: (GlobalConfig.bar.workspaces.perMonitorWorkspaces ? Hypr.monitorFor(screen) : Hypr.focusedMonitor)?.lastIpcObject.specialWorkspace?.name !== ""
+    // True only when actually on a special workspace. The !! (and guarding against
+    // undefined) is deliberate: during a window open/close Hyprland's lastIpcObject is
+    // momentarily incomplete, so specialWorkspace?.name is undefined for a frame — and
+    // the old `name !== ""` returned TRUE for that, flashing the dim+blur overlay on
+    // every open/close. Coercing undefined/"" -> false kills the flicker.
+    readonly property bool onSpecial: !!(GlobalConfig.bar.workspaces.perMonitorWorkspaces ? Hypr.monitorFor(screen) : Hypr.focusedMonitor)?.lastIpcObject?.specialWorkspace?.name
     readonly property int activeWsId: GlobalConfig.bar.workspaces.perMonitorWorkspaces ? (Hypr.monitorFor(screen).activeWorkspace?.id ?? 1) : Hypr.activeWsId
 
     readonly property var occupied: {
