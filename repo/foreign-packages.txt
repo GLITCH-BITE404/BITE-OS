@@ -1,4 +1,5 @@
 app2unit
+bibata-cursor-git
 caelestia-cli
 caelestia-shell
 geocode-glib-2

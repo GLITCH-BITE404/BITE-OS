@@ -4,9 +4,6 @@
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export PULSE_RUNTIME_PATH="$XDG_RUNTIME_DIR/pulse"
 
-# ---------------------------------------------------------
-# CACHING & MIGRATION
-# ---------------------------------------------------------
 source "$(dirname "${BASH_SOURCE[0]}")/caching.sh"
 
 qs_ensure_cache "screenshot"

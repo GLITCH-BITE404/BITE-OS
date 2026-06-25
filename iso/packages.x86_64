@@ -10,6 +10,7 @@ awww
 base
 base-devel
 bash-completion
+bibata-cursor-git
 bind
 blueman
 bluez
@@ -246,6 +247,7 @@ wget
 which
 wireless-regdb
 wireplumber
+wl-clip-persist
 wl-clipboard
 wlogout
 wofi

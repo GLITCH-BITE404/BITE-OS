@@ -15,13 +15,6 @@ Variants {
             property bool pendingReload: false
             
 	    Caching { id: paths }
-
-	    Component.onCompleted: {
- 	        console.log("runDir:", paths.runDir)
- 	        console.log("manual path:", paths.runDir + "/workspaces")
- 	        console.log("env test:", Quickshell.env("QS_RUN_WORKSPACES"))
- 	        console.log("wsPath:", paths.getRunDir("workspaces"))
-	    }	     	
         
             IpcHandler {
                 target: "topbar"

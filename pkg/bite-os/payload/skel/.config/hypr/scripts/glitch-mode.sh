@@ -30,6 +30,14 @@ WALLPAPER_SH="$HOME/.config/hypr/scripts/wallpaper.sh"
 HYPR_WALL_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/hypr/wallpaper"
 STAGE="$HOME/.bite-os-stage"
 
+# Cursor: hacker-amber while glitched, restore the configured normal one on exit.
+# Normal theme/size are read from variables.conf so there's one source of truth.
+CURSOR_GLITCH="Bibata-Modern-Amber"
+CURSOR_NORMAL="$(grep -oP '^\$cursorTheme\s*=\s*\K\S+' "$HOME/.config/hypr/variables.conf" 2>/dev/null || true)"
+CURSOR_NORMAL="${CURSOR_NORMAL:-Bibata-Modern-Classic}"
+CURSOR_SIZE="$(grep -oP '^\$cursorSize\s*=\s*\K\S+' "$HOME/.config/hypr/variables.conf" 2>/dev/null || true)"
+CURSOR_SIZE="${CURSOR_SIZE:-24}"
+
 mkdir -p "$CACHE_DIR"
 
 find_glitch_wall() {
@@ -128,6 +136,7 @@ engage() {
     hyprctl keyword decoration:screen_shader "$SHADER" >/dev/null
     apply_hacker_rice
     apply_foot_hacker
+    hyprctl setcursor "$CURSOR_GLITCH" "$CURSOR_SIZE" >/dev/null
 
     if wall="$(find_glitch_wall)"; then
         cur="$(cat "$HYPR_WALL_STATE" 2>/dev/null || true)"
@@ -181,6 +190,9 @@ disengage() {
     # Restore borders/gaps/rounding to their config defaults
     restore_rice
     restore_foot
+    # hyprctl reload (in restore_rice) does NOT re-run the startup setcursor, so
+    # restore the normal cursor explicitly.
+    hyprctl setcursor "$CURSOR_NORMAL" "$CURSOR_SIZE" >/dev/null
 
     notify-send -u low -i dialog-information-symbolic "BITE-OS" "// glitch mode disengaged" 2>/dev/null || true
 }

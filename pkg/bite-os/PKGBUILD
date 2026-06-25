@@ -10,7 +10,7 @@
 
 pkgname=bite-os
 pkgver=1.1
-pkgrel=5
+pkgrel=6
 pkgdesc="BITE-OS — identity, branding, rice system and tooling (CachyOS-based)"
 arch=('any')
 url="https://tiktok.com/@glitchbite404"
@@ -21,7 +21,7 @@ depends=(
     'hyprland' 'quickshell-git' 'sddm' 'plymouth' 'matugen' 'awww'
     'fastfetch' 'kitty' 'nwg-dock-hyprland' 'xdg-desktop-portal-hyprland'
     'caelestia-shell' 'caelestia-cli' 'jq' 'curl' 'playerctl' 'swayosd'
-    'cliphist' 'hypridle'
+    'cliphist' 'wl-clip-persist' 'bibata-cursor-git' 'hypridle'
 )
 
 # These BITE-OS files replace whatever CachyOS shipped:
