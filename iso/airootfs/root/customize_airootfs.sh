@@ -70,11 +70,20 @@ fi
 #     ships its installer configs tuned for ITS OWN single-kernel, limine ISO;
 #     ours differs in three ways that each break the offline install:
 #
-#   (a) Dual kernel. releng pulls in stock `linux` AND we add `linux-cachyos`,
-#       so the target has BOTH mkinitcpio presets. The stock unpackfs only
-#       copies vmlinuz-linux-cachyos to the target /boot, so `mkinitcpio -P`
-#       (builds initramfs for *every* preset) dies on linux.preset with
-#       "/boot/vmlinuz-linux must be readable". Fix: copy vmlinuz-linux too.
+#   (a) Dual kernel. releng pulls in stock `linux` — whose `linux.preset` is the
+#       LIVE-medium one: PRESETS=('archiso'), pointing at the archiso-only
+#       /etc/mkinitcpio.conf.d/archiso.conf — AND we add `linux-cachyos`. The
+#       Calamares `initcpio` module defaults to `kernel: all`, i.e. it runs
+#       `mkinitcpio -P`, which walks EVERY preset on the target. So it reaches
+#       linux.preset and dies with "archiso.conf ... must be readable" (that
+#       drop-in is meaningless on an installed disk) -> the install ABORTS at
+#       the initcpio step (#13), long before any shellprocess cleanup (#21+)
+#       could run. Fix: point the initcpio module at our real kernel only
+#       (`kernel: linux-cachyos` -> `mkinitcpio -p linux-cachyos`), so it builds
+#       JUST our preset and never touches the live archiso one. The now-dead
+#       linux.preset/archiso.conf (+ the stock linux kernel images) are then
+#       purged from the target in the post step, so a later `mkinitcpio -P` from
+#       a pacman hook on the installed system can't resurrect the same failure.
 #   (b) Wrong bootloader. bootloader.conf defaults to `limine`, which is NOT in
 #       our package set — the bootloader step would fail. `grub` IS installed
 #       and handles BOTH BIOS and UEFI, so point Calamares at grub.
@@ -83,16 +92,14 @@ fi
 #       at /boot/efi, so drop it to 512M.
 #
 # Patch whichever location each module config lives in (/etc wins over /usr/share).
-for U in /etc/calamares/modules/unpackfs.conf /usr/share/calamares/modules/unpackfs.conf; do
-    [ -f "$U" ] || continue
-    if ! grep -qE 'vmlinuz-linux"' "$U"; then
-        cat >> "$U" <<'UNPACK'
-    -   source: "/run/archiso/bootmnt/arch/boot/x86_64/vmlinuz-linux"
-        sourcefs: "file"
-        destination: "/boot/vmlinuz-linux"
-UNPACK
-        echo "[customize_airootfs] unpackfs: now copies stock vmlinuz-linux too ($U)"
+for I in /etc/calamares/modules/initcpio.conf /usr/share/calamares/modules/initcpio.conf; do
+    [ -f "$I" ] || continue
+    if grep -qE '^kernel:' "$I"; then
+        sed -i -E 's/^kernel:.*/kernel: linux-cachyos/' "$I"
+    else
+        echo 'kernel: linux-cachyos' >> "$I"
     fi
+    echo "[customize_airootfs] initcpio: kernel -> linux-cachyos (mkinitcpio -p, skips the live archiso linux.preset) ($I)"
 done
 for B in /etc/calamares/modules/bootloader.conf /usr/share/calamares/modules/bootloader.conf; do
     [ -f "$B" ] || continue
@@ -217,20 +224,26 @@ for C in /etc/calamares/modules/shellprocess.conf \
     # in this step — guard it too so nothing in the post step can ever abort.
     sed -i 's#command: "/etc/calamares/scripts/bootloader-post-setup"#command: "-/etc/calamares/scripts/bootloader-post-setup"#' "$C"
     echo "[customize_airootfs] shellprocess(post): dmcheck/shell-setup/bootloader-post-setup all made non-fatal ($C)"
-    # CRITICAL (boot-killer): our archiso base ships /etc/mkinitcpio.conf.d/archiso.conf
-    # with HOOKS=(... archiso archiso_loop_mnt archiso_pxe_* ...). unpackfs copies it
-    # to the target, and the initcpio step (sequence #13) bakes those live-medium
-    # hooks into the installed initramfs -> the disk boots straight to an emergency
-    # shell ("can't find /run/archiso/..."). We can't delete archiso.conf at build
-    # time (the LIVE ISO's own initramfs needs it) and no chroot hook runs before
-    # #13, so we fix it in THIS post step (#21, after #13): drop the drop-in, then
-    # rebuild a clean initramfs over the dirty one. grub.cfg (written at #18) points
-    # at the initramfs by path, not content, so rebuilding now is safe. Injected at
-    # the FRONT of the script list via a single-line sub (robust, unlike a multi-
-    # line append) and guarded so it's idempotent.
+    # Post-step cleanup of the live-medium initramfs leftovers (belt-and-braces on
+    # top of the 3c-a `kernel: linux-cachyos` fix). The target still carries, from
+    # the squashfs, the stock `linux` package's live archiso bits:
+    #   /etc/mkinitcpio.d/linux.preset   (PRESETS=('archiso'))
+    #   /etc/mkinitcpio.conf.d/archiso.conf
+    # Calamares' initcpio step (#13) no longer touches them (it now runs
+    # `mkinitcpio -p linux-cachyos`), so they no longer break the install — but if
+    # left on disk, the NEXT `mkinitcpio -P` triggered by a routine pacman hook
+    # (kernel/mkinitcpio upgrade) would walk linux.preset and fail exactly as the
+    # installer used to. So purge them here, plus the stock linux kernel images
+    # (no initramfs is ever built for them, so they'd only yield a dead GRUB entry),
+    # then run one clean `mkinitcpio -P` — now safe, since only linux-cachyos.preset
+    # remains. grub.cfg is regenerated afterwards by bootloader-post-setup (3e), so
+    # the removed kernel drops out of the menu. We can't delete these at build time
+    # (the LIVE ISO's own initramfs needs them) and no chroot hook runs before #13,
+    # so this is the right place. Injected at the FRONT of the script list via a
+    # single-line sub (robust, unlike a multi-line append) and guarded so it's idempotent.
     if ! grep -q 'mkinitcpio.conf.d/archiso.conf' "$C"; then
-        sed -i 's#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#    - "-rm -f /etc/mkinitcpio.conf.d/archiso.conf"\n    - "mkinitcpio -P"\n    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#' "$C"
-        echo "[customize_airootfs] shellprocess(post): drops live archiso mkinitcpio hooks + rebuilds a clean target initramfs ($C)"
+        sed -i 's#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#    - "-rm -f /etc/mkinitcpio.conf.d/archiso.conf /etc/mkinitcpio.d/linux.preset /boot/vmlinuz-linux /boot/initramfs-linux.img /boot/initramfs-linux-fallback.img"\n    - "mkinitcpio -P"\n    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#' "$C"
+        echo "[customize_airootfs] shellprocess(post): purges live archiso linux.preset/archiso.conf + stock linux kernel, then rebuilds a clean target initramfs ($C)"
     fi
 done
 
@@ -274,6 +287,21 @@ if [ -d "$GRUB_THEME" ] && [ -f /usr/share/backgrounds/bite-os/wolf_logo.png ]; 
         cp -f /usr/share/backgrounds/bite-os/wolf_logo.png "$bg"
     done
     echo "[customize_airootfs] GRUB theme rebranded with BITE-OS wolf"
+fi
+
+# Make the GRUB menu say "BITE-OS" (not CachyOS/Arch). grub-mkconfig titles every
+# entry with $GRUB_DISTRIBUTOR; cachyos' grub ships it set to CachyOS. Set it in
+# the live /etc/default/grub — unpackfs copies that to the target, so the
+# bootloader module's grub-mkconfig (#18) and the 3e fallback render "BITE-OS".
+# This is a branding STRING only; it never touches the ESP/loader install path.
+GRUB_DEFAULT_FILE=/etc/default/grub
+if [ -f "$GRUB_DEFAULT_FILE" ]; then
+    if grep -q '^[[:space:]]*GRUB_DISTRIBUTOR=' "$GRUB_DEFAULT_FILE"; then
+        sed -i -E 's/^[[:space:]]*GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="BITE-OS"/' "$GRUB_DEFAULT_FILE"
+    else
+        echo 'GRUB_DISTRIBUTOR="BITE-OS"' >> "$GRUB_DEFAULT_FILE"
+    fi
+    echo "[customize_airootfs] GRUB_DISTRIBUTOR -> BITE-OS (boot menu entries will say BITE-OS)"
 fi
 
 # Wire the [bite-os] UPDATE repo — but ONLY if a signing key has been set up
@@ -361,7 +389,14 @@ for f in /usr/bin/cage /usr/local/bin/bite-os-installer-session \
 done
 command -v calamares >/dev/null || { echo "[customize_airootfs] FATAL: calamares not installed" >&2; exit 1; }
 command -v grub-install >/dev/null || { echo "[customize_airootfs] FATAL: grub not installed — Calamares bootloader step (efiBootLoader: grub) would fail" >&2; exit 1; }
-[ -f /etc/mkinitcpio.d/linux.preset ] && [ -f /etc/mkinitcpio.d/linux-cachyos.preset ] || { echo "[customize_airootfs] FATAL: expected both linux + linux-cachyos presets (unpackfs copies both kernels)" >&2; exit 1; }
+[ -f /etc/mkinitcpio.d/linux.preset ] && [ -f /etc/mkinitcpio.d/linux-cachyos.preset ] || { echo "[customize_airootfs] FATAL: expected both linux + linux-cachyos presets (the live build needs linux.preset=archiso for the live initramfs; the installer builds only linux-cachyos and purges linux.preset on the target)" >&2; exit 1; }
+# 3c-a core fix: the installer MUST target only our kernel. If it ever reverts to
+# kernel:all -> `mkinitcpio -P`, it walks the live archiso linux.preset and aborts
+# the whole install ("archiso.conf must be readable"). Fail the build if not set.
+for I in /etc/calamares/modules/initcpio.conf /usr/share/calamares/modules/initcpio.conf; do
+    [ -f "$I" ] || continue
+    grep -qE '^kernel:[[:space:]]*linux-cachyos$' "$I" || { echo "[customize_airootfs] FATAL: $I is not 'kernel: linux-cachyos' — the installer would run mkinitcpio -P and die on the live archiso linux.preset. Re-check section 3c-a." >&2; exit 1; }
+done
 # If cachyos-calamares ships try-v3, it MUST be our safe rewrite (see 3c) — the
 # upstream one silently wipes the installed system's pacman.conf. Assert both
 # that our marker is present AND that no bare `mv $pacman_conf ...` survived.

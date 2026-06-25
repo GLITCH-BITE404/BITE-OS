@@ -6,6 +6,7 @@ Type = Path
 Target = usr/lib/modules/*/vmlinuz
 Target = boot/vmlinuz-*
 Target = boot/loader/entries/*.conf
+Target = etc/default/grub
 
 [Action]
 Description = Re-branding boot entries as BITE-OS...

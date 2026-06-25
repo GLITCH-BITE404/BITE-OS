@@ -12,17 +12,41 @@
 set -uo pipefail
 log() { echo "[bite-os-fix-boot] $*"; }
 
+# --- GRUB branding (installed systems use GRUB, not systemd-boot) -------------
+# Force the GRUB menu to say "BITE-OS" via GRUB_DISTRIBUTOR, then regenerate
+# grub.cfg. Branding STRING only: never edits grub.cfg by hand, never touches the
+# ESP/install path, only regenerates via the supported grub-mkconfig. Self-heals
+# if a grub package update reset /etc/default/grub. Runs regardless of whether
+# this box uses systemd-boot, so a GRUB-only install still gets branded.
+brand_grub() {
+    local d=/etc/default/grub cfg
+    [[ -f "$d" ]] && command -v grub-mkconfig >/dev/null 2>&1 || return 0
+    grep -q '^[[:space:]]*GRUB_DISTRIBUTOR="BITE-OS"' "$d" && return 0
+    mkdir -p /var/lib/bite-os/boot-backup
+    cp -a "$d" "/var/lib/bite-os/boot-backup/etc-default-grub.$(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+    if grep -q '^[[:space:]]*GRUB_DISTRIBUTOR=' "$d"; then
+        sed -i -E 's/^[[:space:]]*GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="BITE-OS"/' "$d"
+    else
+        echo 'GRUB_DISTRIBUTOR="BITE-OS"' >> "$d"
+    fi
+    cfg="$(find /boot -maxdepth 3 -name grub.cfg -path '*grub*' 2>/dev/null | head -1)"
+    cfg="${cfg:-/boot/grub/grub.cfg}"
+    grub-mkconfig -o "$cfg" >/dev/null 2>&1 \
+        && log "GRUB_DISTRIBUTOR -> BITE-OS, regenerated $cfg" \
+        || log "WARN: grub-mkconfig failed; GRUB_DISTRIBUTOR set, menu re-renders on next update"
+}
+
 # --- locate the systemd-boot entries directory --------------------------------
 ESP=""
 for c in /boot /efi /boot/efi; do
     [[ -d "$c/loader/entries" ]] && { ESP="$c"; break; }
 done
-[[ -z "$ESP" ]] && { log "no systemd-boot entries dir — nothing to do"; exit 0; }
+[[ -z "$ESP" ]] && { log "no systemd-boot entries dir — branding GRUB only"; brand_grub; exit 0; }
 ENTRIES_DIR="$ESP/loader/entries"
 
 shopt -s nullglob
 entries=("$ENTRIES_DIR"/*.conf)
-[[ ${#entries[@]} -eq 0 ]] && { log "no entries found — nothing to do"; exit 0; }
+[[ ${#entries[@]} -eq 0 ]] && { log "no systemd-boot entries — branding GRUB only"; brand_grub; exit 0; }
 
 # --- back up every entry BEFORE touching anything -----------------------------
 BACKUP_DIR="/var/lib/bite-os/boot-backup/$(date +%Y%m%d-%H%M%S)"
@@ -79,5 +103,9 @@ for f in "${entries[@]}"; do
 done
 
 (( changed == 0 )) && log "all entries already branded"
+
+# Installed systems also (or only) use GRUB — keep its menu branded too.
+brand_grub
+
 log "done — kernel paths, initrd, options and loader.conf left untouched"
 exit 0
