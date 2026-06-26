@@ -13,3 +13,4 @@ python-pywalfox
 qtengine-git
 ttf-rubik-vf
 swaylock-effects-git
+vscodium-bin

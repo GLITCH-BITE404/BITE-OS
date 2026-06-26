@@ -42,6 +42,7 @@ cryptsetup
 dart-sass
 device-mapper
 diffutils
+direnv
 dmidecode
 dmraid
 dnsmasq
@@ -54,6 +55,7 @@ efitools
 ethtool
 exfatprogs
 expect
+eza
 f2fs-tools
 fastfetch
 ffmpegthumbnailer
@@ -61,6 +63,7 @@ figlet
 firefox
 firefox-i18n-he
 flatpak
+foot
 genact
 git
 glances
@@ -240,6 +243,7 @@ ventoy-bin
 vim
 vlc
 vpl-gpu-rt
+vscodium-bin
 vulkan-intel
 waybar
 waypaper
@@ -262,6 +266,7 @@ xfsprogs
 xl2tpd
 xorg-xwayland
 yay
+zoxide
 
 # --- BITE-OS additions ---
 bite-os

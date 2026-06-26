@@ -245,6 +245,17 @@ for C in /etc/calamares/modules/shellprocess.conf \
         sed -i 's#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#    - "-rm -f /etc/mkinitcpio.conf.d/archiso.conf /etc/mkinitcpio.d/linux.preset /boot/vmlinuz-linux /boot/initramfs-linux.img /boot/initramfs-linux-fallback.img"\n    - "mkinitcpio -P"\n    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#' "$C"
         echo "[customize_airootfs] shellprocess(post): purges live archiso linux.preset/archiso.conf + stock linux kernel, then rebuilds a clean target initramfs ($C)"
     fi
+    # 3d-2. Post-install user/password sanity check. The kiosk uses the stock
+    #       Calamares `users` page, so nothing in our config drops credentials —
+    #       but a silent abort or users-job failure shows up as the "username
+    #       became `user`, password blank" symptom. bite-os-verify-install reads
+    #       the target's passwd/shadow and writes a plain verdict to
+    #       /var/log/bite-os-install.log (read it off the live USB at
+    #       /mnt/var/log/... before rebooting). Leading '-' = never fails install.
+    if ! grep -q 'bite-os-verify-install' "$C"; then
+        sed -i 's#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"\n    - "-/usr/local/bin/bite-os-verify-install"#' "$C"
+        echo "[customize_airootfs] shellprocess(post): added bite-os-verify-install user/password sanity check ($C)"
+    fi
 done
 
 # 3e. Bootloader hardening (THE boot-or-not fix). The Calamares `bootloader`
@@ -379,6 +390,37 @@ default_mode = "Auto"
 SCX_EOF
 systemctl enable scx_loader.service 2>/dev/null || true
 echo "[customize_airootfs] perf stack wired — bite-spaceship-power + sudoers + scx_lavd"
+
+# 3f. Fish shell: make glitch-fetch the fetch tool for new users. cachyos-fish-config
+#     OWNS /etc/skel/.config/fish/config.fish, so the bite-os package cannot ship it
+#     (pacman file conflict). Instead we carry our version as an overlay asset and
+#     drop it into /etc/skel here, AFTER pacstrap — overwriting CachyOS's, so a fresh
+#     user's shell aliases fastfetch -> glitch-fetch and greets with the gacha engine
+#     (in a TTY glitch-fetch falls back to the BITE-OS ASCII logo, never cachy).
+if [ -f /usr/share/bite-os/skel-config.fish ]; then
+    mkdir -p /etc/skel/.config/fish
+    cp -f /usr/share/bite-os/skel-config.fish /etc/skel/.config/fish/config.fish
+    echo "[customize_airootfs] /etc/skel fish config -> glitch-fetch wiring (overrode cachyos-fish-config)"
+else
+    echo "[customize_airootfs] WARN: /usr/share/bite-os/skel-config.fish missing — new users would get the cachyos fish config" >&2
+fi
+
+# 3g. System default cursor -> Bibata. /usr/share/icons/default/index.theme is
+#     OWNED by the `default-cursors` package, so the bite-os package can't ship it
+#     (pacman file conflict). Force the content here, after pacstrap, so SDDM and
+#     anything before the Hyprland session use Bibata instead of the black X cursor.
+if [ -d /usr/share/icons/Bibata-Modern-Classic ]; then
+    mkdir -p /usr/share/icons/default
+    cat > /usr/share/icons/default/index.theme <<'CURSOR_EOF'
+[Icon Theme]
+Name=Default
+Comment=BITE-OS default cursor
+Inherits=Bibata-Modern-Classic
+CURSOR_EOF
+    echo "[customize_airootfs] system default cursor -> Bibata-Modern-Classic"
+else
+    echo "[customize_airootfs] WARN: Bibata-Modern-Classic not installed — default cursor left as-is" >&2
+fi
 
 # 4. Sanity checks — fail the build loudly if a critical piece is missing.
 for f in /usr/bin/cage /usr/local/bin/bite-os-installer-session \

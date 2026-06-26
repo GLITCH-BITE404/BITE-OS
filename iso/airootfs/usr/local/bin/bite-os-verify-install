@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# bite-os-verify-install — post-install sanity check.
+# Runs in the TARGET chroot via Calamares' post `shellprocess` step (called with
+# the leading-'-' ignore-failure prefix, so it can NEVER abort the install).
+#
+# Purpose: when an install boots to a wrong/blank login ("username became `user`,
+# password empty"), this leaves a plain-English verdict you can read straight off
+# the live USB — `cat /mnt/var/log/bite-os-install.log` — without parsing the
+# Calamares log. It only READS /etc/passwd + /etc/shadow; it changes nothing.
+set -u
+LOG=/var/log/bite-os-install.log
+{
+    echo "=== BITE-OS install verify  $(date -Is 2>/dev/null || date) ==="
+
+    # First human account (uid 1000..59999) — what Calamares' `users` step makes.
+    u="$(awk -F: '$3>=1000 && $3<60000 {print $1; exit}' /etc/passwd 2>/dev/null)"
+    if [ -z "$u" ]; then
+        echo "USER:   FAIL — no regular user account on the target."
+        echo "        => the Calamares 'users' step did not run or did not save."
+    else
+        h="$(awk -F: -v U="$u" '$1==U {print $2}' /etc/shadow 2>/dev/null)"
+        case "$h" in
+            ""|"!"|"!!"|"*"|"x")
+                echo "USER:   FAIL — '$u' exists but has NO usable password (SDDM login impossible)." ;;
+            *)
+                echo "USER:   OK — '$u' created, password hash present (len ${#h})." ;;
+        esac
+    fi
+
+    # Root must also have a usable password (doReusePassword/setRootPassword).
+    rh="$(awk -F: '$1=="root"{print $2}' /etc/shadow 2>/dev/null)"
+    case "$rh" in
+        ""|"!"|"!!"|"*") echo "ROOT:   no password set." ;;
+        *)               echo "ROOT:   password set." ;;
+    esac
+    echo "==========================================================="
+} >> "$LOG" 2>&1
+
+# Echo it into the Calamares log too, so it shows up in /tmp/calamares.log.
+cat "$LOG" 2>/dev/null || true
+exit 0

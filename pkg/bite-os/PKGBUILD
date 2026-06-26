@@ -10,7 +10,7 @@
 
 pkgname=bite-os
 pkgver=1.1
-pkgrel=6
+pkgrel=7
 pkgdesc="BITE-OS — identity, branding, rice system and tooling (CachyOS-based)"
 arch=('any')
 url="https://tiktok.com/@glitchbite404"
@@ -68,6 +68,11 @@ package() {
     install -d "$pkgdir/usr/share/sddm/themes"
     cp -a sddm-theme   "$pkgdir/usr/share/sddm/themes/bite-os"
     install -Dm644 sddm-conf/10-bite-os.conf "$pkgdir/etc/sddm.conf.d/10-bite-os.conf"
+
+    # NOTE: the system default cursor (/usr/share/icons/default/index.theme) is
+    # OWNED by the `default-cursors` package — shipping it here is a pacman file
+    # conflict. It's instead force-set to Bibata in customize_airootfs.sh after
+    # pacstrap (overwrites the file in place; no ownership conflict).
 
     # --- default user environment: every new user gets the full rice ---
     install -d "$pkgdir/etc/skel"
