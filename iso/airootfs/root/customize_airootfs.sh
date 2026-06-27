@@ -60,10 +60,21 @@ for f in /usr/share/calamares/settings.conf \
 done
 echo "[customize_airootfs] calamares rebranded to bite-os"
 
-# The offline 'removeuser' step deletes the live user after copy; point it at
-# our live user 'bite' (cachyos defaults to 'liveuser').
+# The offline 'removeuser' step deletes the live user from the target after the
+# squashfs copy; point it at our live user 'bite' (cachyos defaults to 'liveuser').
+# CRITICAL: cachyos ships removeuser.conf with NO `username:` line, so a plain
+# `sed s/^username:.../` replaced nothing and removeuser became a silent no-op —
+# the live `bite` user (uid 1000, password 'bite' baked into the live shadow)
+# survived into the installed system alongside the real typed user, which is the
+# "username became `user`/blank password, SDDM login failed" bug. So APPEND the
+# line when it's missing instead of only replacing it.
 if [ -f /etc/calamares/modules/removeuser.conf ]; then
-    sed -i -E 's/^username:.*/username: bite/' /etc/calamares/modules/removeuser.conf
+    if grep -qE '^username:' /etc/calamares/modules/removeuser.conf; then
+        sed -i -E 's/^username:.*/username: bite/' /etc/calamares/modules/removeuser.conf
+    else
+        echo 'username: bite' >> /etc/calamares/modules/removeuser.conf
+    fi
+    echo "[customize_airootfs] removeuser -> deletes the live 'bite' user from the target"
 fi
 
 # 3b. Reconcile cachyos-calamares with BITE-OS's archiso `releng` base. cachyos
@@ -245,11 +256,25 @@ for C in /etc/calamares/modules/shellprocess.conf \
         sed -i 's#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#    - "-rm -f /etc/mkinitcpio.conf.d/archiso.conf /etc/mkinitcpio.d/linux.preset /boot/vmlinuz-linux /boot/initramfs-linux.img /boot/initramfs-linux-fallback.img"\n    - "mkinitcpio -P"\n    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#' "$C"
         echo "[customize_airootfs] shellprocess(post): purges live archiso linux.preset/archiso.conf + stock linux kernel, then rebuilds a clean target initramfs ($C)"
     fi
-    # 3d-2. Post-install user/password sanity check. The kiosk uses the stock
-    #       Calamares `users` page, so nothing in our config drops credentials —
-    #       but a silent abort or users-job failure shows up as the "username
-    #       became `user`, password blank" symptom. bite-os-verify-install reads
-    #       the target's passwd/shadow and writes a plain verdict to
+    # 3d-1. Deterministically strip the LIVE-ONLY installer remnants from the
+    #       target, IN the chroot, at install time. unpackfs copies the whole live
+    #       squashfs to disk — including the kiosk autologin (/etc/sddm.conf.d/
+    #       99-bite-os-autologin.conf -> User=bite, Session=bite-os-install) and the
+    #       live `bite` user/sudoers. bite-os-firstboot-cleanup is supposed to remove
+    #       these, but it's WantedBy=multi-user.target with NO ordering vs sddm.service,
+    #       so on first boot sddm can read the stale autologin (deleted user + deleted
+    #       session) BEFORE cleanup runs -> the broken/failed login. Removing them here
+    #       (before the target ever boots) makes the installed login deterministic, and
+    #       the `-userdel` is belt-and-suspenders in case the removeuser module hiccups.
+    if ! grep -q '99-bite-os-autologin.conf' "$C"; then
+        sed -i 's#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#    - "-rm -f /etc/sddm.conf.d/99-bite-os-autologin.conf /etc/sddm.conf.d/00-live-autologin.conf"\n    - "-rm -f /usr/share/wayland-sessions/bite-os-install.desktop /usr/local/bin/bite-os-installer-session /usr/local/bin/bite-os-kiosk /usr/local/bin/bite-os-launch-installer /usr/local/bin/install-bite-os"\n    - "-rm -f /etc/sudoers.d/00-bite-live"\n    - "-userdel -r -f bite"\n    - "-systemctl enable sddm.service"\n    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#' "$C"
+        echo "[customize_airootfs] shellprocess(post): strips live autologin/installer/sudoers + leftover 'bite' user from the target (deterministic, pre-first-boot) ($C)"
+    fi
+    # 3d-2. Post-install user/password sanity check. After the cleanup above the
+    #       installed system should show a normal sddm login for the typed user.
+    #       A silent abort or users-job failure shows up as the "username became
+    #       `user`, password blank" symptom — bite-os-verify-install reads the
+    #       target's passwd/shadow and writes a plain verdict to
     #       /var/log/bite-os-install.log (read it off the live USB at
     #       /mnt/var/log/... before rebooting). Leading '-' = never fails install.
     if ! grep -q 'bite-os-verify-install' "$C"; then
@@ -298,6 +323,47 @@ if [ -d "$GRUB_THEME" ] && [ -f /usr/share/backgrounds/bite-os/wolf_logo.png ]; 
         cp -f /usr/share/backgrounds/bite-os/wolf_logo.png "$bg"
     done
     echo "[customize_airootfs] GRUB theme rebranded with BITE-OS wolf"
+fi
+
+# 3h. Boot splash (plymouth). The bite-os package ships the plymouth themes and
+#     depends on plymouth, but nothing ever ACTIVATED it — no default theme, no
+#     mkinitcpio hook, no `splash` on the kernel cmdline — so the splash never
+#     showed. Wire all three here, in the build chroot, so they bake into the
+#     squashfs and carry to the installed system (Calamares rebuilds the target
+#     initramfs with `mkinitcpio -p linux-cachyos` and regenerates grub.cfg from
+#     /etc/default/grub, so both pick this up).
+if [ -d /usr/share/plymouth/themes/bite-os ]; then
+    install -d /etc/plymouth
+    printf '[Daemon]\nTheme=bite-os\n' > /etc/plymouth/plymouthd.conf
+    command -v plymouth-set-default-theme >/dev/null 2>&1 && plymouth-set-default-theme bite-os || true
+    echo "[customize_airootfs] plymouth: default theme -> bite-os"
+else
+    echo "[customize_airootfs] WARN: /usr/share/plymouth/themes/bite-os missing — splash theme not set" >&2
+fi
+
+# plymouth HOOK in mkinitcpio (idempotent). Must sit right AFTER the systemd (or
+# udev) hook so the splash comes up as early as possible. cachyos uses the systemd
+# initramfs (initcpiocfg useSystemdHook: true), so prefer inserting after systemd.
+if [ -f /etc/mkinitcpio.conf ] && ! grep -qE '^HOOKS=.*plymouth' /etc/mkinitcpio.conf; then
+    if grep -qE '^HOOKS=\(.*\bsystemd\b' /etc/mkinitcpio.conf; then
+        sed -i -E 's/^(HOOKS=\([^)]*\bsystemd\b)/\1 plymouth/' /etc/mkinitcpio.conf
+    elif grep -qE '^HOOKS=\(.*\budev\b' /etc/mkinitcpio.conf; then
+        sed -i -E 's/^(HOOKS=\([^)]*\budev\b)/\1 plymouth/' /etc/mkinitcpio.conf
+    fi
+    grep -qE '^HOOKS=.*plymouth' /etc/mkinitcpio.conf \
+        && echo "[customize_airootfs] mkinitcpio HOOKS += plymouth ($(grep -E '^HOOKS=' /etc/mkinitcpio.conf))" \
+        || echo "[customize_airootfs] WARN: could not insert plymouth hook (no systemd/udev hook found)" >&2
+fi
+
+# kernel cmdline: `quiet splash` for the installed system's GRUB.
+if [ -f /etc/default/grub ]; then
+    if grep -qE '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub; then
+        grep -qE '^GRUB_CMDLINE_LINUX_DEFAULT=.*\bsplash\b' /etc/default/grub \
+            || sed -i -E 's/^(GRUB_CMDLINE_LINUX_DEFAULT=")/\1quiet splash /' /etc/default/grub
+    else
+        echo 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"' >> /etc/default/grub
+    fi
+    echo "[customize_airootfs] grub cmdline += quiet splash ($(grep -E '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub))"
 fi
 
 # Make the GRUB menu say "BITE-OS" (not CachyOS/Arch). grub-mkconfig titles every

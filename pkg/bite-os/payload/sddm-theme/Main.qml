@@ -7,10 +7,16 @@ Rectangle {
     height: 1080
     color: "#020103"
 
+    // Font BUNDLED with the theme + loaded here so the family always resolves.
+    // The system has no plain "JetBrains Mono" (only the Nerd Font), so the old
+    // hard-coded name fell back to a PROPORTIONAL face -> uneven character widths.
+    FontLoader { id: monoFont;     source: "JetBrainsMonoNerdFontMono-Regular.ttf" }
+    FontLoader { id: monoFontBold; source: "JetBrainsMonoNerdFontMono-Bold.ttf" }
+
     property string accent:  "#b48aff"
     property string accent2: "#33ffff"
     property string danger:  "#ff2d55"
-    property string mono:    "JetBrains Mono"
+    property string mono:    monoFont.name !== "" ? monoFont.name : "JetBrains Mono"
 
     // splash | idle | chomp | locked | success
     property string mode: "splash"
@@ -2283,6 +2289,92 @@ Rectangle {
         repeat: true
         triggeredOnStart: true
         onTriggered: clock.text = Qt.formatDateTime(new Date(), "yyyy-MM-dd  hh:mm:ss")
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // GLOBAL FINISH PASS (2026-06-27) — additive overlays that grade the whole
+    // screen into ONE cohesive, cinematic dedsec look so the matrix/skull/video/
+    // form/stats stop feeling like separate effects. Pure overlays (no MouseArea)
+    // so they never block the password field, eye button or power controls.
+    // ────────────────────────────────────────────────────────────
+    Item {
+        anchors.fill: parent
+        z: 60
+
+        // 1) faint violet colour-grade — pulls every layer into one palette
+        Rectangle { anchors.fill: parent; color: "#1a0a2a"; opacity: 0.10 }
+
+        // 2) edge vignette (top/bottom) — darkens the busy borders, centre pops
+        Rectangle {
+            anchors.fill: parent
+            opacity: 0.5
+            gradient: Gradient {
+                GradientStop { position: 0.0;  color: "#000000" }
+                GradientStop { position: 0.15; color: "transparent" }
+                GradientStop { position: 0.85; color: "transparent" }
+                GradientStop { position: 1.0;  color: "#000000" }
+            }
+        }
+        // edge vignette (left/right)
+        Row {
+            anchors.fill: parent
+            Rectangle {
+                width: parent.width * 0.16; height: parent.height
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "#000000" }
+                    GradientStop { position: 1.0; color: "transparent" }
+                }
+            }
+            Item { width: parent.width * 0.68; height: 1 }
+            Rectangle {
+                width: parent.width * 0.16; height: parent.height
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "transparent" }
+                    GradientStop { position: 1.0; color: "#000000" }
+                }
+            }
+        }
+
+        // 3) unifying CRT scanlines across the whole screen
+        Column {
+            anchors.fill: parent
+            spacing: 2
+            Repeater {
+                model: Math.ceil(root.height / 3)
+                Rectangle { width: root.width; height: 1; color: "#000000"; opacity: 0.08 }
+            }
+        }
+
+        // 4) faint "live signal" flicker — a cheap cyan pulse, very low opacity
+        Rectangle {
+            anchors.fill: parent
+            color: root.accent2
+            opacity: 0.0
+            SequentialAnimation on opacity {
+                loops: Animation.Infinite
+                NumberAnimation { to: 0.022; duration: 80 }
+                NumberAnimation { to: 0.0;   duration: 200 }
+                PauseAnimation  { duration: 1800 }
+            }
+        }
+    }
+
+    // Build stamp — bottom-right, subtle. Bumped each rebuild so a booted ISO is
+    // instantly identifiable as the new one (the old build has no stamp).
+    Text {
+        id: buildStamp
+        text: "BITE-OS 1.0 · build 2026-06-27"
+        font.family: root.mono
+        font.pixelSize: 12
+        color: root.accent
+        opacity: 0.4
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.rightMargin: 18
+        anchors.bottomMargin: 14
+        z: 999
     }
 
     Component.onCompleted: pwField.forceActiveFocus()
