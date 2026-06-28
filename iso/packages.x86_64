@@ -63,6 +63,7 @@ figlet
 firefox
 firefox-i18n-he
 flatpak
+github-desktop
 foot
 genact
 git
@@ -172,6 +173,7 @@ php
 pipewire-alsa
 pipewire-pulse
 pkgfile
+qps
 playerctl
 plocate
 plymouth

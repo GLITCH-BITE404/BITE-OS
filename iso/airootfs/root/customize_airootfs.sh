@@ -270,6 +270,20 @@ for C in /etc/calamares/modules/shellprocess.conf \
         sed -i 's#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#    - "-rm -f /etc/sddm.conf.d/99-bite-os-autologin.conf /etc/sddm.conf.d/00-live-autologin.conf"\n    - "-rm -f /usr/share/wayland-sessions/bite-os-install.desktop /usr/local/bin/bite-os-installer-session /usr/local/bin/bite-os-kiosk /usr/local/bin/bite-os-launch-installer /usr/local/bin/install-bite-os"\n    - "-rm -f /etc/sudoers.d/00-bite-live"\n    - "-userdel -r -f bite"\n    - "-systemctl enable sddm.service"\n    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#' "$C"
         echo "[customize_airootfs] shellprocess(post): strips live autologin/installer/sudoers + leftover 'bite' user from the target (deterministic, pre-first-boot) ($C)"
     fi
+    # 3d-1b. Force the installed system to boot GRAPHICAL (THE "boots to tty as root"
+    #        fix). archiso bakes the live squashfs with default.target = multi-user
+    #        (text mode) + a root autologin on tty1, and the live reaches its installer
+    #        via a script, not graphical.target. unpackfs copies that to disk, so the
+    #        INSTALLED system boots to a TEXT console as root with no sddm. Calamares'
+    #        displaymanager module isn't reliably flipping this on our base, so do it
+    #        deterministically: default target -> graphical, (re)assert the sddm
+    #        display-manager alias, and drop the leaked root tty1 autologin so a console
+    #        is never a passwordless root shell. Raw ln/rm (no systemctl) so it works in
+    #        the offline chroot; leading '-' so it can never abort the install.
+    if ! grep -q 'graphical.target /etc/systemd/system/default.target' "$C"; then
+        sed -i 's#    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#    - "-rm -f /etc/systemd/system/default.target"\n    - "-ln -sf /usr/lib/systemd/system/graphical.target /etc/systemd/system/default.target"\n    - "-ln -sf /usr/lib/systemd/system/sddm.service /etc/systemd/system/display-manager.service"\n    - "-mkdir -p /etc/systemd/system/graphical.target.wants"\n    - "-ln -sf /usr/lib/systemd/system/sddm.service /etc/systemd/system/graphical.target.wants/sddm.service"\n    - "-rm -rf /etc/systemd/system/getty@tty1.service.d"\n    - "-rm /etc/systemd/system/etc-pacman.d-gnupg.mount"#' "$C"
+        echo "[customize_airootfs] shellprocess(post): force graphical.target default + sddm display-manager + drop leaked root tty1 autologin on the target ($C)"
+    fi
     # 3d-2. Post-install user/password sanity check. After the cleanup above the
     #       installed system should show a normal sddm login for the typed user.
     #       A silent abort or users-job failure shows up as the "username became
