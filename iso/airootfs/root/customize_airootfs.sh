@@ -355,17 +355,20 @@ else
     echo "[customize_airootfs] WARN: /usr/share/plymouth/themes/bite-os missing — splash theme not set" >&2
 fi
 
-# plymouth HOOK in mkinitcpio (idempotent). Must sit right AFTER the systemd (or
-# udev) hook so the splash comes up as early as possible. cachyos uses the systemd
-# initramfs (initcpiocfg useSystemdHook: true), so prefer inserting after systemd.
+# plymouth HOOK in mkinitcpio (idempotent). CRITICAL: the hook name depends on the
+# initramfs style. With the SYSTEMD initramfs (cachyos uses it — initcpiocfg
+# useSystemdHook: true) the correct hook is `sd-plymouth`, placed right after the
+# `systemd` hook. The plain `plymouth` hook is ONLY for the busybox/udev initramfs;
+# using it with a systemd initramfs warns and the splash never comes up. Match the
+# hook to the style so `mkinitcpio -p linux-cachyos` (run by Calamares) stays clean.
 if [ -f /etc/mkinitcpio.conf ] && ! grep -qE '^HOOKS=.*plymouth' /etc/mkinitcpio.conf; then
     if grep -qE '^HOOKS=\(.*\bsystemd\b' /etc/mkinitcpio.conf; then
-        sed -i -E 's/^(HOOKS=\([^)]*\bsystemd\b)/\1 plymouth/' /etc/mkinitcpio.conf
+        sed -i -E 's/^(HOOKS=\([^)]*\bsystemd\b)/\1 sd-plymouth/' /etc/mkinitcpio.conf
     elif grep -qE '^HOOKS=\(.*\budev\b' /etc/mkinitcpio.conf; then
         sed -i -E 's/^(HOOKS=\([^)]*\budev\b)/\1 plymouth/' /etc/mkinitcpio.conf
     fi
     grep -qE '^HOOKS=.*plymouth' /etc/mkinitcpio.conf \
-        && echo "[customize_airootfs] mkinitcpio HOOKS += plymouth ($(grep -E '^HOOKS=' /etc/mkinitcpio.conf))" \
+        && echo "[customize_airootfs] mkinitcpio HOOKS += (sd-)plymouth ($(grep -E '^HOOKS=' /etc/mkinitcpio.conf))" \
         || echo "[customize_airootfs] WARN: could not insert plymouth hook (no systemd/udev hook found)" >&2
 fi
 

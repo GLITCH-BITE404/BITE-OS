@@ -31,9 +31,23 @@ find_pkg() {
 }
 
 echo "==> 1/4  Building the bite-os package (fresh)"
+# Purge stale build artifacts FIRST. pkg/bite-os/ used to accumulate every old
+# version (1.1-1 .. 1.1-N); the old `cp bite-os-*.pkg.tar.*` then copied ALL of
+# them into the repo, `cp` reset their mtimes to "now", and the later
+# `ls -t | keep-newest` heuristic could no longer tell which was current — so a
+# STALE package (e.g. 1.1-7) won and shipped in the ISO (missing the latest skel,
+# rice, plymouth theme, etc.). Clean slate avoids the whole ambiguity.
+rm -f "$DISTRO/pkg/bite-os/"bite-os-*.pkg.tar.*
 ( cd "$DISTRO/pkg/bite-os" && makepkg -f --noconfirm ) || {
     echo "!! makepkg failed — fix PKGBUILD/payload, then re-run." >&2; exit 1; }
-cp "$DISTRO/pkg/bite-os/"bite-os-*.pkg.tar.* "$REPO/" 2>/dev/null
+# Copy ONLY the package makepkg just built (resolved exactly, not globbed), and
+# drop any older bite-os already sitting in the repo so repo-add can't pick it.
+BITE_PKG="$(cd "$DISTRO/pkg/bite-os" && makepkg --packagelist 2>/dev/null | grep -E '/bite-os-[^/]*\.pkg\.tar' | head -1)"
+if [ -z "$BITE_PKG" ] || [ ! -f "$BITE_PKG" ]; then
+    echo "!! could not locate the freshly-built bite-os package (makepkg --packagelist)." >&2; exit 1; fi
+rm -f "$REPO/"bite-os-*.pkg.tar.*
+cp "$BITE_PKG" "$REPO/"
+echo "   -> repo gets $(basename "$BITE_PKG")"
 
 echo "==> 2/4  Building yaml-cpp-0.8 compat (calamares needs libyaml-cpp.so.0.8)"
 # Reuse existing build if PKGBUILD hasn't changed (saves ~30s per ISO rebuild).

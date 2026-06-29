@@ -10,7 +10,7 @@
 
 pkgname=bite-os
 pkgver=1.1
-pkgrel=9
+pkgrel=11
 pkgdesc="BITE-OS — identity, branding, rice system and tooling (CachyOS-based)"
 arch=('any')
 url="https://tiktok.com/@glitchbite404"
@@ -64,7 +64,11 @@ package() {
     install -m644 branding/bite-os-repo.conf "$pkgdir/usr/share/bite-os/"
 
     # --- boot splash + login themes ---
-    cp -a plymouth/.   "$pkgdir/usr/share/plymouth/themes/" 2>/dev/null || true
+    # NOTE: the dest dir MUST be created first — `cp -a plymouth/. <dir>/` fails if
+    # <dir> doesn't exist, and the old `2>/dev/null || true` silently swallowed that
+    # failure, so the plymouth theme was NEVER packaged (splash could never work).
+    install -d "$pkgdir/usr/share/plymouth/themes"
+    cp -a plymouth/.   "$pkgdir/usr/share/plymouth/themes/"
     install -d "$pkgdir/usr/share/sddm/themes"
     cp -a sddm-theme   "$pkgdir/usr/share/sddm/themes/bite-os"
     install -Dm644 sddm-conf/10-bite-os.conf "$pkgdir/etc/sddm.conf.d/10-bite-os.conf"

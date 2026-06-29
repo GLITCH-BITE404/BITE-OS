@@ -93,9 +93,9 @@ bash repo/build-repo.sh
 
 # repo must contain the freshly-bumped bite-os pkg + vscodium-bin
 [ -f repo/x86_64/bite-os.db.tar.gz ] || { echo "${c_r}repo db not built — see build-repo.sh output above${c_0}" >&2; exit 1; }
-ls repo/x86_64/bite-os-1.1-9-*.pkg.tar.* >/dev/null 2>&1 \
-    && ok "bite-os 1.1-9 in repo" \
-    || echo "${c_y}  ! warning: bite-os 1.1-9 not found in repo — check the makepkg output${c_0}"
+ls repo/x86_64/bite-os-1.1-11-*.pkg.tar.* >/dev/null 2>&1 \
+    && ok "bite-os 1.1-11 in repo" \
+    || echo "${c_y}  ! warning: bite-os 1.1-11 not found in repo — check the makepkg output${c_0}"
 ls repo/x86_64/vscodium-bin-*.pkg.tar.* >/dev/null 2>&1 \
     && ok "vscodium-bin in repo" \
     || echo "${c_y}  ! warning: vscodium-bin not in repo — Super+C editor won't be installed${c_0}"
